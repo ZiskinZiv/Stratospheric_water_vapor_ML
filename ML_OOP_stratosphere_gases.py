@@ -120,6 +120,7 @@ class ML_models:
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            reg_file='Regressors.nc', time_period=None):
+    """Run ML model with..."""
     # pick ml model from ML_models class dict:
     ml = ML_models()
     ml_model = ml.pick_model(model_name)
