@@ -619,6 +619,7 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
         import pandas as pd
+        # TODO: add contour lines
         if not hasattr(self, 'results_'):
             raise AttributeError('No results yet... run model.fit(X,y) first!')
         rds = self.results_
