@@ -113,7 +113,7 @@ class ML_models:
         model_dict['GPR'] = GaussianProcessRegressor(random_state=42)
         self.model = model_dict.get(model_name, 'Invalid')
         if self.model == 'Invalid':
-            raise Exception('WRONG MODEL NAME!!')
+            raise KeyError('WRONG MODEL NAME!!')
         return self.model
 
 
@@ -147,10 +147,11 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     else:
         model.fit(X, y)
     return model
-    
-    
+
+
 def get_feature_multitask_dim(X, y, sample_dim):
-    """return feature dim and multitask dim if exists, otherwise return empty lists"""
+    """return feature dim and multitask dim if exists, otherwise return empty
+    lists"""
     # check if y has a multitask dim, i.e., y(sample, multitask)
     mt_dim = [x for x in y.dims if x != sample_dim]
     # check if X has a feature dim, i.e., X(sample, regressors)
@@ -233,7 +234,6 @@ def pre_proccess(params):
     # import numpy as np
     import xarray as xr
     import os
-    import pandas as pd
     path = os.getcwd() + '/'
     reg_file = params.regressors_file
     # load X i.e., regressors
@@ -475,8 +475,8 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
                 if v.endswith('_') and not v.startswith('_'):
                     setattr(self, v, getattr(self.estimator_, v))
             # set results attr
-            self.results = self.make_results(X, y)
-            setattr(self, 'results', self.results)
+            self.results_ = self.make_results(X, y)
+            setattr(self, 'results_', self.results_)
             # set X_ and y_ attrs:
             setattr(self, 'X_', X)
             setattr(self, 'y_', y)
@@ -537,21 +537,23 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
                 rds['pvalues'] = xr.DataArray(pvals, dims=feature_dim)
         elif sk_attr(self, 'feature_importances_'):
             if mt_dim:
-                rds['feature_importances'] = xr.DataArray(self.feature_importances_,
+                rds['feature_importances'] = xr.DataArray(self.
+                                                          feature_importances_,
                                                           dims=[mt_dim,
                                                                 feature_dim])
             else:
-                rds['feature_importances'] = xr.DataArray(self.feature_importances_,
+                rds['feature_importances'] = xr.DataArray(self.
+                                                          feature_importances_,
                                                           dims=[feature_dim])
         predict = self.predict(X)
         if mt_dim:
             predict = predict.rename({self.reshapes: mt_dim})
             rds['predict'] = predict
-            r2 = r2_score(y, predict, multioutput='raw_values')    
+            r2 = r2_score(y, predict, multioutput='raw_values')
             rds['r2'] = xr.DataArray(r2, dims=mt_dim)
         else:
             rds['predict'] = predict
-            r2 = r2_score(y, predict)    
+            r2 = r2_score(y, predict)
             rds['r2'] = xr.DataArray(r2)
         if feature_dim:
             r2_adj = 1.0 - (1.0 - rds['r2']) * (len(y) - 1.0) / \
@@ -564,7 +566,7 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
         rds['resid'].attrs = y.attrs
         rds['resid'].attrs['long_name'] = 'Residuals'
         rds['dw_score'] = (rds['resid'].diff(self.sample_dim)**2).sum(self.sample_dim,
-                                                                 keep_attrs=True) / (rds['resid']**2).sum(self.sample_dim, keep_attrs=True)
+                                                                  keep_attrs=True) / (rds['resid']**2).sum(self.sample_dim, keep_attrs=True)
         if mt_dim:
             rds = rds.unstack(mt_dim)
         rds = xr_order(rds)
@@ -603,12 +605,13 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
             new_X = regressors_list[i].to_array(dim=feature_dim)
             new_X = aux.xr_order(new_X)
             self.fit(new_X, y)
-            res_dict[keys] = self.results
+            res_dict[keys] = self.results_
 #            elif mode == 'model_all':
 #                params, res_dict[keys] = run_model_for_all(new_X, y, params)
 #            elif mode == 'multi_model':
 #                params, res_dict[keys] = run_multi_model(new_X, y, params)
-        self.results = produce_RI(res_dict, feature_dim)
+        self.results_ = produce_RI(res_dict, feature_dim)
+        self.X_ = X
         return
 
     def plot_like(self, field, div=False, robust=False, vmax=None, vmin=None):
@@ -616,10 +619,11 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
         import pandas as pd
-        if not hasattr(self, 'results'):
-            print('No results yet... run model.fit(X,y) first!')
-            return
-        rds = self.results
+        if not hasattr(self, 'results_'):
+            raise AttributeError('No results yet... run model.fit(X,y) first!')
+        rds = self.results_
+        if field not in rds.data_vars:
+            raise KeyError('No ' + str(field) + ' in results_!')
         if div:
             cmap = 'bwr'
         else:
@@ -639,7 +643,8 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
             orig = orig.reindex({'time': pd.date_range(orig.time[0].values,
                                                        orig.time[-1].values,
                                                        freq='MS')})
-            con = orig.T.plot.contourf(ax=axes[0], yscale='log', yincrease=False,
+            con = orig.T.plot.contourf(ax=axes[0], yscale='log',
+                                       yincrease=False,
                                        center=0.0, levels=41, vmax=cmap_max,
                                        cmap='bwr')
             cb = con.colorbar
