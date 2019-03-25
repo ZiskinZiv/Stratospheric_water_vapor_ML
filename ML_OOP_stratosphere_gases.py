@@ -619,7 +619,6 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
         import pandas as pd
-        # TODO: add contour lines
         if not hasattr(self, 'results_'):
             raise AttributeError('No results yet... run model.fit(X,y) first!')
         rds = self.results_
@@ -678,6 +677,7 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
             plt.show()
             return con
         elif field in rds.attrs['error_types']:
+            # TODO: add contour lines
             suptitle = rds[field].name
             try:
                 con = rds[field].plot.contourf(yscale='log', yincrease=False,
@@ -701,6 +701,7 @@ class EstimatorWrapper(_CommonEstimatorWrapper):
             plt.show()
             return con
         elif field in rds.attrs['feature_types']:
+            # TODO: add contour lines
             con_levels = [0.001, 0.005, 0.01, 0.05]  # for pvals
             con_colors = ['blue', 'cyan', 'yellow', 'red']  # for pvals
             import xarray as xr
