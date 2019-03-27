@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Mar 10 13:20:30 2019
-
+1) run LR with qbo_1 and qbo_2 and ch4, do validation test hold one out
+2) multioutput to gett cross_val_scores on cv=10 or cv=400
+2) send the figs to Shawn davis, ask about 1984-1987
 @author: shlomi
 """
 from types import MethodType
@@ -234,7 +236,7 @@ def pre_proccess(params):
     # import numpy as np
     import xarray as xr
     import os
-    path = os.getcwd() + '/'
+    path = os.getcwd() + '/regressors/'
     reg_file = params.regressors_file
     # load X i.e., regressors
     regressors = xr.open_dataset(path + reg_file)
