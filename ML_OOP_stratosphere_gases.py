@@ -26,7 +26,7 @@ class parameters:
                              'reg_selection', 'special_run']
         self.delimeter = '_'
         self.model_name = 'LR'
-        self.season = 'All'
+        self.season = 'all'
         self.reg_selection = 'R1'   # All
         self.regressors_file = 'Regressors_d2.nc'
 #        self.sw_field_list = ['combinedanomfillanom', 'combinedanomfill',
@@ -77,78 +77,171 @@ class parameters:
         return data
 
 
-class ML_models:
+class ML_Switcher(object):
+    def pick_model(self, model_name):
+        """Dispatch method"""
+        method_name = str(model_name)
+        # Get the method from 'self'. Default to a lambda.
+        method = getattr(self, method_name, lambda: "Invalid ML Model")
+        # Call the method as we return it
+        return method()
 
-    def pick_model(self, model_name='LR'):
-        import numpy as np
-        from gplearn.genetic import SymbolicRegressor
-        from sklearn.linear_model import LassoCV
-        from sklearn.gaussian_process import GaussianProcessRegressor
-        from sklearn.gaussian_process.kernels import ExpSineSquared, WhiteKernel, ConstantKernel
-        from sklearn.linear_model import SGDRegressor
-        from sklearn.linear_model import RANSACRegressor
-        from sklearn.linear_model import TheilSenRegressor
+    def LR(self):
         from sklearn.linear_model import LinearRegression
-        from sklearn.linear_model import Ridge
-        from sklearn.linear_model import Lasso
+        return LinearRegression(n_jobs=-1, copy_X=True)
+
+    def GPSR(self):
+        from gplearn.genetic import SymbolicRegressor
+        return SymbolicRegressor(random_state=42, n_jobs=1, metric='mse')
+
+    def LASSOCV(self):
+        from sklearn.linear_model import LassoCV
+        import numpy as np
+        return LassoCV(random_state=42, cv=5, n_jobs=-1,
+                       alphas=np.logspace(-5, 1, 60))
+
+    def MTLASSOCV(self):
         from sklearn.linear_model import MultiTaskLassoCV
+        import numpy as np
+        return MultiTaskLassoCV(random_state=42, cv=10, n_jobs=-1,
+                                alphas=np.logspace(-5, 2, 400))
+
+    def MTLASSO(self):
         from sklearn.linear_model import MultiTaskLasso
-        from sklearn.linear_model import MultiTaskElasticNet
-        from sklearn.linear_model import ElasticNet
+        return MultiTaskLasso()
+
+    def KRR(self):
         from sklearn.kernel_ridge import KernelRidge
-        from sklearn.ensemble import RandomForestRegressor
-        from sklearn.svm import SVR
-        from sklearn.neural_network import MLPRegressor
-        model_dict = {}
-        model_dict['GP-SR'] = SymbolicRegressor(random_state=42,
-                                                n_jobs=1, metric='mse')
-        model_dict['LASSOCV'] = LassoCV(random_state=42, cv=5, n_jobs=-1,
-                                        alphas=np.logspace(-5, 1, 60))
-        model_dict['MT-LASSOCV'] = MultiTaskLassoCV(random_state=42, cv=5,
-                                                    n_jobs=-1,
-                                                    alphas=np.logspace(-10, 1, 400))
-        model_dict['LR'] = LinearRegression(n_jobs=-1, copy_X=True)
-        model_dict['MT-LASSO'] = MultiTaskLasso()
-        model_dict['KRR'] = KernelRidge(kernel='poly', degree=2)
-        model_dict['GP-SR'] = SymbolicRegressor(random_state=42, n_jobs=1,
-                                                metric='mse')
-        model_dict['GPR'] = GaussianProcessRegressor(random_state=42)
-        self.model = model_dict.get(model_name, 'Invalid')
-        if self.model == 'Invalid':
-            raise KeyError('WRONG MODEL NAME!!')
-        return self.model
+        return KernelRidge(kernel='poly', degree=2)
+
+    def GPR(self):
+        from sklearn.gaussian_process import GaussianProcessRegressor
+        return GaussianProcessRegressor(random_state=42)
+
+    def MTENETCV(self):
+        import numpy as np
+        from sklearn.linear_model import MultiTaskElasticNetCV
+        return MultiTaskElasticNetCV(random_state=42, cv=10, n_jobs=-1,
+                                alphas=np.logspace(-5, 2, 400))
+
+#class ML_models:
+#
+#    def pick_model(self, model_name='LR'):
+#        import numpy as np
+#        from gplearn.genetic import SymbolicRegressor
+#        from sklearn.linear_model import LassoCV
+#        from sklearn.gaussian_process import GaussianProcessRegressor
+#        from sklearn.gaussian_process.kernels import ExpSineSquared, WhiteKernel, ConstantKernel
+#        from sklearn.linear_model import SGDRegressor
+#        from sklearn.linear_model import RANSACRegressor
+#        from sklearn.linear_model import TheilSenRegressor
+#        from sklearn.linear_model import LinearRegression
+#        from sklearn.linear_model import Ridge
+#        from sklearn.linear_model import Lasso
+#        from sklearn.linear_model import MultiTaskLassoCV
+#        from sklearn.linear_model import MultiTaskLasso
+#        from sklearn.linear_model import MultiTaskElasticNet
+#        from sklearn.linear_model import ElasticNet
+#        from sklearn.kernel_ridge import KernelRidge
+#        from sklearn.ensemble import RandomForestRegressor
+#        from sklearn.svm import SVR
+#        from sklearn.neural_network import MLPRegressor
+#        model_dict = {}
+#        model_dict['GP-SR'] = SymbolicRegressor(random_state=42,
+#                                                n_jobs=1, metric='mse')
+#        model_dict['LASSOCV'] = LassoCV(random_state=42, cv=5, n_jobs=-1,
+#                                        alphas=np.logspace(-5, 1, 60))
+#        model_dict['MT-LASSOCV'] = MultiTaskLassoCV(random_state=42, cv=5,
+#                                                    n_jobs=-1,
+#                                                    alphas=np.logspace(-10, 1, 400))
+#        model_dict['LR'] = LinearRegression(n_jobs=-1, copy_X=True)
+#        model_dict['MT-LASSO'] = MultiTaskLasso()
+#        model_dict['KRR'] = KernelRidge(kernel='poly', degree=2)
+#        model_dict['GP-SR'] = SymbolicRegressor(random_state=42, n_jobs=1,
+#                                                metric='mse')
+#        model_dict['GPR'] = GaussianProcessRegressor(random_state=42)
+#        self.model = model_dict.get(model_name, 'Invalid')
+#        if self.model == 'Invalid':
+#            raise KeyError('WRONG MODEL NAME!!')
+#        return self.model
 
 
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
-           reg_file='Regressors.nc', time_period=None):
-    """Run ML model with..."""
+           regressors_file='Regressors.nc', time_period=None, cv=None,
+           regressors=None, reg_except=None):
+    """Run ML model with...
+    regressors = all"""
     # pick ml model from ML_models class dict:
-    ml = ML_models()
+    ml = ML_Switcher()
     ml_model = ml.pick_model(model_name)
     # set external parameters if i want:
     if ml_params is not None:
         ml_model.set_params(**ml_params)
     # ints. parameters and feed run_ML args to it:
-    p = parameters()
     arg_dict = locals()
-    arg_dict.pop('model_name')
-    arg_dict.pop('RI_proc')
-    arg_dict.pop('ml_params')
+    keys_to_remove = ['model_name', 'RI_proc', 'ml_params', 'cv', 'regressors']
+    [arg_dict.pop(key) for key in keys_to_remove]
+    p = parameters()
     p.from_dict(arg_dict)
     # pre proccess:
     X, y = pre_proccess(p)
     # select regressors:
-    X = X.sel(regressors=['qbo_1', 'qbo_2', 'ch4'])
+    reg_select = [x for x in X.regressors.values]
+    # unpack regressors:
+    if regressors is None:
+        reg_select = ['qbo_1', 'qbo_2', 'ch4']
+    if reg_select != 'all':
+        X = X.sel({'regressors': reg_select})
+    if reg_except is not None:
+        reg_select = [x for x in reg_select if x not in reg_except]
+        X = X.sel({'regressors': reg_select})
     # wrap ML_model:
     model = EstimatorWrapper(ml_model, reshapes='regressors',
                              sample_dim='time')
+    if cv is not None:
+        from sklearn.multioutput import MultiOutputRegressor
+        from sklearn.model_selection import cross_validate
+        mul = (MultiOutputRegressor(model.estimator))
+        mul.fit(X, y)
+        cv_results = [cross_validate(mul.estimators_[i], X, y.isel(samples=i),
+                                     cv=cv) for i in
+                      range(len(mul.estimators_))]
+        cds = proccess_cv_results(cv_results, y)
+        return cds
     print(model.estimator)
     if RI_proc:
         model.make_RI(X, y)
     else:
-        model.fit(X, y)
+        if model_name == 'MTLASSOCV' or model_name == 'MTENETCV':
+            from yellowbrick.regressor import AlphaSelection
+            visualizer = AlphaSelection(ml_model)
+            visualizer.fit(X, y)
+            g = visualizer.poof()
+            model.fit(X, y)
+        else:
+            model.fit(X, y)
     return model
+
+
+def proccess_cv_results(cvr, y):
+    """proccess cross_validation results and build an xarray with dims of y for
+    them"""
+    import xarray as xr
+    import numpy as np
+    test = xr.DataArray([x['test_score'] for x in cvr],
+                        dims=['samples', 'kfold'])
+    train = xr.DataArray([x['train_score'] for x in cvr],
+                         dims=['samples', 'kfold'])
+    train.name = 'train'
+    cds = test.to_dataset(name='test')
+    cds['train'] = train
+    cds['samples'] = y.samples
+    cds['kfold'] = np.arange(len(cvr[0]['test_score'])) + 1
+    cds['mean_train'] = cds.train.mean('kfold')
+    cds['mean_test'] = cds.test.mean('kfold')
+    cds = cds.unstack('samples')
+    return cds
 
 
 def get_feature_multitask_dim(X, y, sample_dim):
@@ -283,7 +376,7 @@ def pre_proccess(params):
     elif dname == 'merra':
         da = da.sel(level=slice(100, 0.1), lat=slice(-20, 20))
     # select seasonality:
-    if season != 'All':
+    if season != 'all':
         da = da.sel(time=da['time.season'] == season)
         regressors = regressors.sel(time=regressors['time.season'] == season)
     # area_mean:
@@ -300,7 +393,7 @@ def pre_proccess(params):
     else:
         how = 'std'
     # deseason y
-    if season != 'All':
+    if season != 'all':
         da = aux.deseason_xr(da, how=how, season=season, verbose=False)
     else:
         da = aux.deseason_xr(da, how=how, verbose=False)
