@@ -46,7 +46,6 @@ def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
                      'solar': 'solar_10p7cm_index.nc',
                      'vol': 'vol_index.nc',
                      'qbo': 'era5_qbo_index.nc',
-                     'ghg': 'ghg_index.nc',
                      'olr': 'olr_index.nc',
                      'ch4': 'ch4_index.nc',
                      'wind': 'era5_wind_shear_index.nc',
@@ -74,8 +73,8 @@ def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
     qbo_1 = qbo['qbo_1']
     qbo_2 = qbo['qbo_2']
     # get GHG:
-    ghg = load_regressor(reg_file_dict['ghg'], plot=False, deseason=False)
-    ghg.name = 'ghg'
+    # ghg = load_regressor(reg_file_dict['ghg'], plot=False, deseason=False)
+    # ghg.name = 'ghg'
     # get cold point:
     cold = load_regressor(reg_file_dict['cold'], plot=False, deseason=False)
     cold.name = 'cold'
@@ -104,6 +103,8 @@ def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
                            normalize_poly=False)
         ds = da.to_dataset(dim='regressors')
         name = 'Regressors_d' + str(poly)
+    else:
+        name = 'Regressors'
     if normalize:
         ds = ds.apply(aux.normalize_xr, norm=1,
                       keep_attrs=True, verbose=False)
@@ -114,7 +115,7 @@ def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
             except OSError as e:  # if failed, report it back to the user
                 print("Error: %s - %s." % (e.filename, e.strerror))
             print('Updating ' + name + '.nc' + ' in ' + savepath)
-        ds.to_netcdf(savepath + name + '.nc', 'w')
+        ds.to_netcdf(savepath + name + '.nc')
         print(name + ' was saved to ' + savepath)
     if plot:
         le = len(ds.data_vars)
@@ -387,6 +388,7 @@ def _produce_qbo_pcs(npcs=2, source='singapore', plot=True, savepath=None):
     elif source == 'era5':
         U = xr.open_dataarray(path + 'ERA5_U_eq_mean.nc')
         U = U.sel(level=slice(100, 10))
+        # U = U.sel(time=slice('1987', '2018'))
         filename = 'era5_qbo_index.nc'
     solver = Eof(U)
     eof = solver.eofsAsCorrelation(neofs=npcs)
@@ -400,8 +402,10 @@ def _produce_qbo_pcs(npcs=2, source='singapore', plot=True, savepath=None):
     qbo_ds = xr.Dataset()
     for ar in pc.groupby('mode'):
         qbo_ds['qbo_' + str(ar[0])] = ar[1]
+    if source == 'era5':
+        qbo_ds = -qbo_ds
     qbo_ds = qbo_ds.reset_coords(drop=True)
-    qbo_ds.to_netcdf(savepath + filename)
+    qbo_ds.to_netcdf(savepath + filename, 'w')
     print('Saved ' + filename + ' to ' + savepath)
     if plot:
         plt.close('all')
