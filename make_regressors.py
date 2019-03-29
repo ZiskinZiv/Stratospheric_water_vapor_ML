@@ -367,13 +367,15 @@ def _produce_T500_from_era5(savepath=None):
     return T500
 
 
-def _produce_qbo_pcs(npcs=2, source='singapore', plot=True, savepath=None):
+def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', plot=True,
+                     savepath=None):
     import os
     import xarray as xr
     import aux_functions_strat as aux
     from eofs.xarray import Eof
     import matplotlib.pyplot as plt
     import numpy as np
+    import sys
     if savepath is None:
         savepath = os.getcwd() + '/regressors/'
     path = savepath
@@ -390,18 +392,28 @@ def _produce_qbo_pcs(npcs=2, source='singapore', plot=True, savepath=None):
         U = U.sel(level=slice(100, 10))
         # U = U.sel(time=slice('1987', '2018'))
         filename = 'era5_qbo_index.nc'
+    elif source == 'swoosh':
+        if sys.platform == 'linux':
+            work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
+        elif sys.platform == 'darwin':  # mac os
+            work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
+        U = xr.open_dataset(work_path + 'swoosh_latpress-2.5deg.nc')
+        U = U['combinedanomfillanomh2oq']
+        U = U.sel(lat=slice(-20, 20), level=slice(100, 10))
+        U = aux.xr_weighted_mean(U)
+        filename = 'swoosh_h2o_index.nc'
     solver = Eof(U)
     eof = solver.eofsAsCorrelation(neofs=npcs)
     pc = solver.pcs(npcs=npcs, pcscaling=1)
-    pc.attrs['long_name'] = source + ' QBO index'
+    pc.attrs['long_name'] = source + ' ' + name + ' index'
     pc['mode'] = pc.mode + 1
     eof['mode'] = eof.mode + 1
     vf = solver.varianceFraction(npcs)
     errors = solver.northTest(npcs, vfscaled=True)
-    ['qbo_' + str(i) for i in pc]
+    [name + '_' + str(i) for i in pc]
     qbo_ds = xr.Dataset()
     for ar in pc.groupby('mode'):
-        qbo_ds['qbo_' + str(ar[0])] = ar[1]
+        qbo_ds[name + '_' + str(ar[0])] = ar[1]
     if source == 'era5':
         qbo_ds = -qbo_ds
     qbo_ds = qbo_ds.reset_coords(drop=True)
@@ -802,9 +814,10 @@ def _make_nc_files_run_once(savepath=None):
     _ = _download_enso_ersst(index=True, path=savepath)
     _ = _produce_strato_aerosol(savepath=savepath, index=True)
     _ = _download_solar_10p7cm_flux(savepath=savepath, index=True)
-    _ = _produce_qbo_pcs(npcs=2, source='singapore', plot=False,
+    _ = _produce_eof_pcs(npcs=2, name='qbo', source='singapore', plot=False,
                          savepath=savepath)
-    _ = _produce_qbo_pcs(npcs=2, source='era5', plot=False, savepath=savepath)
+    _ = _produce_eof_pcs(npcs=2, name='qbo', source='era5', plot=False,
+                         savepath=savepath)
     _ = _produce_T500_from_era5(savepath=savepath)
     _ = _download_CH4(trend=True, savepath=savepath)
     _ = _produce_OLR(savepath=savepath)
