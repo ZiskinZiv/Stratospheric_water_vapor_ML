@@ -82,7 +82,8 @@ def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
     olr = load_regressor(reg_file_dict['olr'], plot=False, deseason=True)
     olr.name = 'olr'
     # get ch4:
-    ch4 = load_regressor(reg_file_dict['ch4'], plot=False, deseason=False)
+    ch4 = load_regressor(reg_file_dict['ch4'], plot=False, deseason=False,
+                         normalize=True)
     ch4.name = 'ch4'
     # get wind_shear:
     wind = load_regressor(reg_file_dict['wind'], plot=False, deseason=False)
@@ -148,7 +149,7 @@ def load_regressor(regressor_file, plot=True, deseason=True, normalize=False,
     if normalize:
         from aux_functions_strat import normalize_xr
         # normalize = remove mean and divide by std
-        reg = normalize_xr(reg, keep_attrs=True, verbose=False)
+        reg = normalize_xr(reg, verbose=False)
     if plot:
         if is_dataset:
             reg.to_pandas().plot()
