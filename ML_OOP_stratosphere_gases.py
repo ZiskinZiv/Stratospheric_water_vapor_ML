@@ -186,16 +186,22 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     p.from_dict(arg_dict)
     # pre proccess:
     X, y = pre_proccess(p)
-    # select regressors:
-    reg_select = [x for x in X.regressors.values]
     # unpack regressors:
     if regressors is None:
+        # default selection:
         reg_select = ['qbo_1', 'qbo_2', 'ch4']
-    if reg_select != 'all':
+    elif regressors != 'all':
+        # convert str to list:
+        if isinstance(regressors, str):
+            regressors = regressors.split(' ')
+        # select regressors:
+        reg_select = [x for x in regressors]
         X = X.sel({'regressors': reg_select})
-    if reg_except is not None:
-        reg_select = [x for x in reg_select if x not in reg_except]
+    if reg_except is not None and regressors == 'all':
+        reg_select = [x for x in X.regressors.values if x not in reg_except]
         X = X.sel({'regressors': reg_select})
+    print('Running with regressors: ', ', '.join([x for x in
+                                                  X.regressors.values]))
     # wrap ML_model:
     model = EstimatorWrapper(ml_model, reshapes='regressors',
                              sample_dim='time')
