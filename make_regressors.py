@@ -368,8 +368,8 @@ def _produce_T500_from_era5(savepath=None):
     return T500
 
 
-def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', plot=True,
-                     savepath=None):
+def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', levels=(100, 10),
+                     plot=True, savepath=None):
     import os
     import xarray as xr
     import aux_functions_strat as aux
@@ -400,7 +400,7 @@ def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', plot=True,
             work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
         U = xr.open_dataset(work_path + 'swoosh_latpress-2.5deg.nc')
         U = U['combinedanomfillanomh2oq']
-        U = U.sel(lat=slice(-20, 20), level=slice(100, 10))
+        U = U.sel(lat=slice(-20, 20), level=slice(*levels))
         U = aux.xr_weighted_mean(U)
         filename = 'swoosh_h2o_index.nc'
     solver = Eof(U)
