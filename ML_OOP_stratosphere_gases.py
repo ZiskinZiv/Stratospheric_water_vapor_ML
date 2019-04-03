@@ -196,10 +196,9 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             regressors = regressors.split(' ')
         # select regressors:
         reg_select = [x for x in regressors]
-        X = X.sel({'regressors': reg_select})
     if reg_except is not None and regressors == 'all':
         reg_select = [x for x in X.regressors.values if x not in reg_except]
-        X = X.sel({'regressors': reg_select})
+    X = X.sel({'regressors': reg_select})
     print('Running with regressors: ', ', '.join([x for x in
                                                   X.regressors.values]))
     # wrap ML_model:
@@ -214,7 +213,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
                                      cv=cv) for i in
                       range(len(mul.estimators_))]
         cds = proccess_cv_results(cv_results, y)
-        return cds
+        return cv_results
     print(model.estimator)
     if RI_proc:
         model.make_RI(X, y)
