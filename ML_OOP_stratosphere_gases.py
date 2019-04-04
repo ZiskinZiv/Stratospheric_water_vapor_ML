@@ -44,7 +44,7 @@ class parameters:
         self.attrs = {}  # keep attrs of data
         self.original_data_file = 'swoosh_latpress-2.5deg.nc'  # original data filename (in work_path)
         if sys.platform == 'linux':
-            self.work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
+            self.work_path = '/home/shlomi/Desktop/DATA/Work_Files/Chaim_Stratosphere_Data/'
             self.cluster_path = '/mnt/cluster/'
         elif sys.platform == 'darwin':  # mac os
             self.work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
@@ -210,10 +210,10 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         mul = (MultiOutputRegressor(model.estimator))
         mul.fit(X, y)
         cv_results = [cross_validate(mul.estimators_[i], X, y.isel(samples=i),
-                                     cv=cv) for i in
+                                     cv=cv, scoring='r2') for i in
                       range(len(mul.estimators_))]
         cds = proccess_cv_results(cv_results, y)
-        return cv_results
+        return cds
     print(model.estimator)
     if RI_proc:
         model.make_RI(X, y)
