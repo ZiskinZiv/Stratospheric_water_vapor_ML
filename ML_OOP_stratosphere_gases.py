@@ -7,15 +7,6 @@ Created on Sun Mar 10 13:20:30 2019
 2) send the figs to Shawn davis, ask about 1984-1987
 @author: shlomi
 """
-from types import MethodType
-from sklearn.base import BaseEstimator
-from sklearn.utils.validation import check_X_y, check_array
-from sklearn_xarray.common.base import _CommonEstimatorWrapper
-from sklearn_xarray.common.base import (
-    partial_fit, predict, predict_proba, predict_log_proba, decision_function,
-    transform, inverse_transform, fit_transform, score)
-from sklearn_xarray.utils import is_dataarray, is_dataset, is_target
-from sklearn.externals import six
 
 
 class parameters:
@@ -75,6 +66,19 @@ class parameters:
         elif name == 'original':
             data = xr.open_dataset(self.work_path + self.original_data_file)
         return data
+
+    def select_model(self, model_name=None, ml_params=None):
+        # pick ml model from ML_models class dict:
+        ml = ML_Switcher()
+        if model_name is not None:
+            ml_model = ml.pick_model(model_name)
+            self.model_name = model_name
+        else:
+            ml_model = ml.pick_model(self.model_name)
+        # set external parameters if i want:
+        if ml_params is not None:
+            ml_model.set_params(**ml_params)
+        return ml_model
 
 
 class ML_Switcher(object):
@@ -172,18 +176,15 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            regressors=None, reg_except=None):
     """Run ML model with...
     regressors = all"""
-    # pick ml model from ML_models class dict:
-    ml = ML_Switcher()
-    ml_model = ml.pick_model(model_name)
-    # set external parameters if i want:
-    if ml_params is not None:
-        ml_model.set_params(**ml_params)
+    from sklearn_xarray import RegressorWrapper
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
     keys_to_remove = ['model_name', 'RI_proc', 'ml_params', 'cv', 'regressors']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = parameters()
     p.from_dict(arg_dict)
+    # select model:
+    ml_model = p.select_model(model_name, ml_params)
     # pre proccess:
     X, y = pre_proccess(p)
     # unpack regressors:
@@ -202,8 +203,8 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     print('Running with regressors: ', ', '.join([x for x in
                                                   X.regressors.values]))
     # wrap ML_model:
-    model = EstimatorWrapper(ml_model, reshapes='regressors',
-                             sample_dim='time')
+    model = ImprovedRegressor(RegressorWrapper(ml_model, reshapes='regressors',
+                                               sample_dim='time'))
     if cv is not None:
         from sklearn.multioutput import MultiOutputRegressor
         from sklearn.model_selection import cross_validate
@@ -419,25 +420,7 @@ def pre_proccess(params):
     return reg_stacked, da
 
 
-# mapping from wrapped methods to wrapper methods
-_method_map = {
-    'partial_fit': partial_fit,
-    'predict': predict,
-    'predict_proba': predict_proba,
-    'predict_log_proba': predict_log_proba,
-    'decision_function': decision_function,
-    'transform': transform,
-    'inverse_transform': inverse_transform,
-    'fit_transform': fit_transform,
-    'score': score
-}
-
-
 class ImprovedRegressor(RegressorWrapper):
-    def __init__(self, estimator=None, reshapes='regressors',
-                 sample_dim='time', **kwargs):
-        RegressorWrapper.__init__(self, estimator, reshapes, sample_dim,
-                                  **kwargs)
 
     def fit(self, X, y=None, **fit_params):
         """ A wrapper around the fitting function.
@@ -456,191 +439,11 @@ class ImprovedRegressor(RegressorWrapper):
         """
         self = super().fit(X, y, **fit_params)
         # set results attr
-        # self.results_ = self.make_results(X, y)
-        self.results_ = 'results'
+        self.results_ = self.make_results(X, y)
         setattr(self, 'results_', self.results_)
         # set X_ and y_ attrs:
         setattr(self, 'X_', X)
         setattr(self, 'y_', y)
-    
-class EstimatorWrapper(_CommonEstimatorWrapper):
-    def __init__(self, estimator=None, reshapes='regressors',
-                 sample_dim='time', **kwargs):
-        if isinstance(estimator, type):
-            self.estimator = estimator(**kwargs)
-            params = self.estimator.get_params()
-        else:
-            self.estimator = estimator
-            params = estimator.get_params()
-            params.update(kwargs)
-        self.reshapes = reshapes
-        self.sample_dim = sample_dim
-        for p in params:
-            setattr(self, p, params[p])
-
-        self._param_names = \
-            self._get_param_names() + self.estimator._get_param_names()
-
-        self._decorate()
-
-    def __getstate__(self):
-
-        state = self.__dict__.copy()
-
-        for m in _method_map:
-            if hasattr(self.estimator, m):
-                state.pop(m)
-
-        return state
-
-    def __setstate__(self, state):
-
-        self.__dict__ = state
-        self._decorate()
-
-    def _decorate(self):
-        """ Decorate this instance with wrapping methods for the estimator. """
-
-        # TODO: check if this needs to be removed for compat wrappers
-        if hasattr(self.estimator, '_estimator_type'):
-            setattr(self, '_estimator_type', self.estimator._estimator_type)
-
-        for m in _method_map:
-            if hasattr(self.estimator, m):
-                if six.PY2:
-                    setattr(self, m,
-                            MethodType(_method_map[m], self, EstimatorWrapper))
-                else:
-                    setattr(self, m, MethodType(_method_map[m], self))
-
-    def _make_estimator(self):
-        """ Return an instance of the wrapped estimator. """
-
-        params = {p: getattr(self, p)
-                  for p in self.estimator._get_param_names()}
-
-        return type(self.estimator)(**params)
-
-    def _reset(self):
-        """ Reset internal data-dependent state of the wrapper.
-
-        __init__ parameters are not touched.
-        """
-
-        for v in vars(self).copy():
-            if v.endswith('_') and not v.startswith('_'):
-                delattr(self, v)
-
-    def get_params(self, deep=True):
-        """ Get parameters for this estimator.
-
-        Parameters
-        ----------
-        deep : boolean, optional
-            If True, will return the parameters for this estimator and
-            contained subobjects that are estimators.
-
-        Returns
-        -------
-        params : mapping of string to any
-            Parameter names mapped to their values.
-        """
-
-        # TODO: check if this causes problems for wrapped nested estimators
-        params = BaseEstimator.get_params(self, deep=False)
-        params.update({p: getattr(self, p) for p in self._param_names})
-
-        return params
-
-    def set_params(self, **params):
-        """ Set the parameters of this estimator.
-
-        The method works on simple estimators as well as on nested objects
-        (such as pipelines). The latter have parameters of the form
-        ``<component>__<parameter>`` so that it's possible to update each
-        component of a nested object.
-
-        Returns
-        -------
-        self
-        """
-
-        for p in self._param_names:
-            if p in params:
-                setattr(self, p, params[p])
-
-        return self
-
-    def fit(self, X, y=None, **fit_params):
-        """ A wrapper around the fitting function.
-
-        Parameters
-        ----------
-        X : xarray DataArray, Dataset other other array-like
-            The training input samples.
-
-        y : xarray DataArray, Dataset other other array-like
-            The target values.
-
-        Returns
-        -------
-        Returns self.
-        """
-
-        if self.estimator is None:
-            raise ValueError('You must specify an estimator instance to wrap.')
-
-        self._reset()
-
-        if is_target(y):
-            y = y(X)
-
-        if is_dataarray(X):
-
-            self.type_ = 'DataArray'
-            self.estimator_ = self._fit(X, y, **fit_params)
-
-            # TODO: check if this needs to be removed for compat wrappers
-            for v in vars(self.estimator_):
-                if v.endswith('_') and not v.startswith('_'):
-                    setattr(self, v, getattr(self.estimator_, v))
-            # set results attr
-            self.results_ = self.make_results(X, y)
-            setattr(self, 'results_', self.results_)
-            # set X_ and y_ attrs:
-            setattr(self, 'X_', X)
-            setattr(self, 'y_', y)
-
-        elif is_dataset(X):
-
-            self.type_ = 'Dataset'
-            self.estimator_dict_ = {
-                v: self._fit(X[v], y, **fit_params) for v in X.data_vars}
-
-            # TODO: check if this needs to be removed for compat wrappers
-            for e_name, e in six.iteritems(self.estimator_dict_):
-                for v in vars(e):
-                    if v.endswith('_') and not v.startswith('_'):
-                        if hasattr(self, v):
-                            getattr(self, v).update({e_name: getattr(e, v)})
-                        else:
-                            setattr(self, v, {e_name: getattr(e, v)})
-
-        else:
-
-            self.type_ = 'other'
-            if y is None:
-                X = check_array(X)
-            else:
-                X, y = check_X_y(X, y)
-
-            self.estimator_ = self._make_estimator().fit(X, y, **fit_params)
-
-            # TODO: check if this needs to be removed for compat wrappers
-            for v in vars(self.estimator_):
-                if v.endswith('_') and not v.startswith('_'):
-                    setattr(self, v, getattr(self.estimator_, v))
-
         return self
 
     def make_results(self, X, y):
