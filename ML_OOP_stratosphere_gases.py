@@ -433,6 +433,36 @@ _method_map = {
 }
 
 
+class ImprovedRegressor(RegressorWrapper):
+    def __init__(self, estimator=None, reshapes='regressors',
+                 sample_dim='time', **kwargs):
+        RegressorWrapper.__init__(self, estimator, reshapes, sample_dim,
+                                  **kwargs)
+
+    def fit(self, X, y=None, **fit_params):
+        """ A wrapper around the fitting function.
+        Improved: adds the X_ and y_ and results_ attrs to class.
+        Parameters
+        ----------
+        X : xarray DataArray, Dataset other other array-like
+            The training input samples.
+
+        y : xarray DataArray, Dataset other other array-like
+            The target values.
+
+        Returns
+        -------
+        Returns self.
+        """
+        self = super().fit(X, y, **fit_params)
+        # set results attr
+        # self.results_ = self.make_results(X, y)
+        self.results_ = 'results'
+        setattr(self, 'results_', self.results_)
+        # set X_ and y_ attrs:
+        setattr(self, 'X_', X)
+        setattr(self, 'y_', y)
+    
 class EstimatorWrapper(_CommonEstimatorWrapper):
     def __init__(self, estimator=None, reshapes='regressors',
                  sample_dim='time', **kwargs):
