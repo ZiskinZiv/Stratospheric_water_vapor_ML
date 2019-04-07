@@ -42,7 +42,6 @@ class parameters:
         self.shift = None
         self.time_period = time_period
         self.area_mean = area_mean
-        self.attrs = {}  # keep attrs of data
         self.original_data_file = original_data_file  # original data filename (in work_path)
         if sys.platform == 'linux':
             self.work_path = '/home/shlomi/Desktop/DATA/Work_Files/Chaim_Stratosphere_Data/'
@@ -261,7 +260,13 @@ def proccess_cv_results(cvr, y, sample_dim):
     cds['kfold'] = np.arange(len(cvr[0]['test_score'])) + 1
     cds['mean_train'] = cds.train.mean('kfold')
     cds['mean_test'] = cds.test.mean('kfold')
+    # unstack:
     cds = cds.unstack(mt_dim)
+    # put attrs back to geographical coords:
+    # first pop sample dim (it is not in cds's coords)
+    for coord, attr in y.attrs['coords_attrs'].items():
+        if coord != sample_dim:
+            cds[coord].attrs = attr
     return cds
 
 
@@ -426,7 +431,7 @@ def pre_proccess(params):
 #        regressors = regressors.sel(time=da.time)
     # saving attrs:
     attrs = [da[dim].attrs for dim in da.dims]
-    params.attrs = dict(zip(da.dims, attrs))
+    da.attrs['coords_attrs'] = dict(zip(da.dims, attrs))
     # stacking:
     reg_names = [x for x in regressors.data_vars.keys()]
     reg_stacked = regressors[reg_names].to_array(dim='regressors').T
@@ -520,11 +525,16 @@ class ImprovedRegressor(RegressorWrapper):
         rds['resid'].attrs['long_name'] = 'Residuals'
         rds['dw_score'] = (rds['resid'].diff(self.sample_dim)**2).sum(self.sample_dim,
                                                                   keep_attrs=True) / (rds['resid']**2).sum(self.sample_dim, keep_attrs=True)
+        # unstack dims:
         if mt_dim:
             rds = rds.unstack(mt_dim)
+        # order:
         rds = xr_order(rds)
-#        for dim, atr in params.attrs.items():
-#            rds[dim].attrs = atr
+        # put coords attrs back:
+        for coord, attr in y.attrs['coords_attrs'].items():
+            rds[coord].attrs = attr
+        # remove coords attrs from original:
+        rds.original.attrs.pop('coords_attrs')
         all_var_names = [x for x in rds.data_vars.keys()]
         sample_types = [x for x in rds.data_vars.keys()
                         if self.sample_dim in rds[x].dims]
