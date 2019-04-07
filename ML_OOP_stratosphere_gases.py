@@ -7,33 +7,43 @@ Created on Sun Mar 10 13:20:30 2019
 2) send the figs to Shawn davis, ask about 1984-1987
 @author: shlomi
 """
+from sklearn_xarray import RegressorWrapper
 
 
 class parameters:
 
-    def __init__(self):
+    def __init__(self,
+                 model_name='LR',
+                 season='all',
+                 regressors_file='Regressors_d2.nc',
+                 swoosh_field='combinedanomfillanom',
+                 data_name='swoosh',
+                 species='h2o',
+                 time_period=None,
+                 area_mean=False,
+                 original_data_file='swoosh_latpress-2.5deg.nc'):
         import sys
         self.filing_order = ['data_name', 'field', 'model_name', 'season',
                              'reg_selection', 'special_run']
         self.delimeter = '_'
-        self.model_name = 'LR'
-        self.season = 'all'
+        self.model_name = model_name
+        self.season = season
         self.reg_selection = 'R1'   # All
-        self.regressors_file = 'Regressors_d2.nc'
+        self.regressors_file = regressors_file
 #        self.sw_field_list = ['combinedanomfillanom', 'combinedanomfill',
 #                              'combinedanom', 'combinedeqfillanom',
 #                              'combinedeqfill', 'combinedeqfillseas',
 #                              'combinedseas', 'combined']
-        self.swoosh_field = 'combinedanomfillanom'
+        self.swoosh_field = swoosh_field
         self.run_on_cluster = False  # False to run locally mainly to test stuff
         self.special_run = 'normal'
-        self.data_name = 'swoosh'  # merra, era5
-        self.species = 'h2o'  # can be T or phi for era5
+        self.data_name = data_name  # merra, era5
+        self.species = species  # can be T or phi for era5
         self.shift = None
-        self.time_period = None
-        self.area_mean = False
+        self.time_period = time_period
+        self.area_mean = area_mean
         self.attrs = {}  # keep attrs of data
-        self.original_data_file = 'swoosh_latpress-2.5deg.nc'  # original data filename (in work_path)
+        self.original_data_file = original_data_file  # original data filename (in work_path)
         if sys.platform == 'linux':
             self.work_path = '/home/shlomi/Desktop/DATA/Work_Files/Chaim_Stratosphere_Data/'
             self.cluster_path = '/mnt/cluster/'
@@ -176,13 +186,12 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            regressors=None, reg_except=None):
     """Run ML model with...
     regressors = all"""
-    from sklearn_xarray import RegressorWrapper
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
-    keys_to_remove = ['model_name', 'RI_proc', 'ml_params', 'cv', 'regressors']
+    keys_to_remove = ['RI_proc', 'ml_params', 'cv', 'regressors', 'reg_except']
     [arg_dict.pop(key) for key in keys_to_remove]
-    p = parameters()
-    p.from_dict(arg_dict)
+    p = parameters(**arg_dict)
+    # p.from_dict(arg_dict)
     # select model:
     ml_model = p.select_model(model_name, ml_params)
     # pre proccess:
@@ -203,17 +212,20 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     print('Running with regressors: ', ', '.join([x for x in
                                                   X.regressors.values]))
     # wrap ML_model:
-    model = ImprovedRegressor(RegressorWrapper(ml_model, reshapes='regressors',
-                                               sample_dim='time'))
+    model = ImprovedRegressor(ml_model, reshapes='regressors',
+                              sample_dim='time')
     if cv is not None:
         from sklearn.multioutput import MultiOutputRegressor
         from sklearn.model_selection import cross_validate
+        # get multi-target dim:
+        mt_dim = [x for x in y.dims if x != 'time'][0]
         mul = (MultiOutputRegressor(model.estimator))
         mul.fit(X, y)
-        cv_results = [cross_validate(mul.estimators_[i], X, y.isel(samples=i),
+        cv_results = [cross_validate(mul.estimators_[i], X,
+                                     y.isel({mt_dim: i}),
                                      cv=cv, scoring='r2') for i in
                       range(len(mul.estimators_))]
-        cds = proccess_cv_results(cv_results, y)
+        cds = proccess_cv_results(cv_results, y, 'time')
         return cds
     print(model.estimator)
     if RI_proc:
@@ -227,26 +239,29 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             model.fit(X, y)
         else:
             model.fit(X, y)
+    # append parameters to model class:
+    model.run_parameters_ = p
     return model
 
 
-def proccess_cv_results(cvr, y):
+def proccess_cv_results(cvr, y, sample_dim):
     """proccess cross_validation results and build an xarray with dims of y for
     them"""
     import xarray as xr
     import numpy as np
+    mt_dim = [x for x in y.dims if x != sample_dim][0]
     test = xr.DataArray([x['test_score'] for x in cvr],
-                        dims=['samples', 'kfold'])
+                        dims=[mt_dim, 'kfold'])
     train = xr.DataArray([x['train_score'] for x in cvr],
-                         dims=['samples', 'kfold'])
+                         dims=[mt_dim, 'kfold'])
     train.name = 'train'
     cds = test.to_dataset(name='test')
     cds['train'] = train
-    cds['samples'] = y.samples
+    cds[mt_dim] = y[mt_dim]
     cds['kfold'] = np.arange(len(cvr[0]['test_score'])) + 1
     cds['mean_train'] = cds.train.mean('kfold')
     cds['mean_test'] = cds.test.mean('kfold')
-    cds = cds.unstack('samples')
+    cds = cds.unstack(mt_dim)
     return cds
 
 
@@ -421,6 +436,11 @@ def pre_proccess(params):
 
 
 class ImprovedRegressor(RegressorWrapper):
+    def __init__(self, estimator=None, reshapes=None, sample_dim=None,
+                 **kwargs):
+        # call parent constructor to set estimator, reshapes, sample_dim,
+        # **kwargs
+        super().__init__(estimator, reshapes, sample_dim, **kwargs)
 
     def fit(self, X, y=None, **fit_params):
         """ A wrapper around the fitting function.
