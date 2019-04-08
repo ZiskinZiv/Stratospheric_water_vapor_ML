@@ -216,13 +216,17 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     if cv is not None:
         from sklearn.multioutput import MultiOutputRegressor
         from sklearn.model_selection import cross_validate
+        from sklearn.model_selection import RepeatedKFold
+        # TODO: fix rkf behavior
+        # inst. Kfold:
+        rkf = RepeatedKFold(n_splits=cv, n_repeats=5, random_state=42)
         # get multi-target dim:
         mt_dim = [x for x in y.dims if x != 'time'][0]
         mul = (MultiOutputRegressor(model.estimator))
         mul.fit(X, y)
         cv_results = [cross_validate(mul.estimators_[i], X,
                                      y.isel({mt_dim: i}),
-                                     cv=cv, scoring='r2') for i in
+                                     cv=rkf, scoring='r2') for i in
                       range(len(mul.estimators_))]
         cds = proccess_cv_results(cv_results, y, 'time')
         return cds
