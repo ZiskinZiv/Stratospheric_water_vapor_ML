@@ -30,7 +30,7 @@ more analysis:
 """
 
 
-def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
+def prepare_regressors(name='Regressors', plot=True, save=False,
                        rewrite_file=True, normalize=False, savepath=None):
     """get all the regressors and prepare them save to file.
     replaced prepare_regressors for MLR function"""
@@ -97,13 +97,13 @@ def prepare_regressors(name='Regressors', plot=True, save=False, poly=None,
     ds['vol'] = ds['vol'].fillna(1.31)
     ds = ds.reset_coords(drop=True)
     ds['ch4'] = ds['ch4'].fillna(0.019076 + 1.91089)
-    if poly is not None:
-        da = ds.to_array(dim='regressors').dropna(dim='time').T
-        da = poly_features(da, feature_dim='regressors', degree=poly,
-                           interaction_only=False, include_bias=False,
-                           normalize_poly=False)
-        ds = da.to_dataset(dim='regressors')
-        name = 'Regressors_d' + str(poly)
+#    if poly is not None:
+#        da = ds.to_array(dim='regressors').dropna(dim='time').T
+#        da = poly_features(da, feature_dim='regressors', degree=poly,
+#                           interaction_only=False, include_bias=False,
+#                           normalize_poly=False)
+#        ds = da.to_dataset(dim='regressors')
+#        name = 'Regressors_d' + str(poly)
     else:
         name = 'Regressors'
     if normalize:
@@ -156,35 +156,6 @@ def load_regressor(regressor_file, plot=True, deseason=True, normalize=False,
         else:
             reg.plot()
     return reg
-
-
-def poly_features(X, feature_dim='regressors', degree=2,
-                  interaction_only=False, include_bias=False,
-                  normalize_poly=False):
-    from sklearn.preprocessing import PolynomialFeatures
-    import xarray as xr
-    from aux_functions_strat import normalize_xr
-    sample_dim = [x for x in X.dims if x != feature_dim][0]
-    # Vars = ['x' + str(n) for n in range(X.shape[1])]
-    # dic = dict(zip(Vars, X[dim_name].values))
-    poly = PolynomialFeatures(degree=degree, interaction_only=interaction_only,
-                              include_bias=include_bias)
-    X_new = poly.fit_transform(X)
-    feature_names = [x for x in X[feature_dim].values]
-    new_names = poly.get_feature_names(feature_names)
-    new_names = [x.replace(' ', '*') for x in new_names]
-    X_with_poly_features = xr.DataArray(X_new, dims=[sample_dim, feature_dim])
-    X_with_poly_features[sample_dim] = X[sample_dim]
-    X_with_poly_features[feature_dim] = new_names
-    X_with_poly_features.attrs = X.attrs
-    X_with_poly_features.name = 'Polynomial Features'
-    if normalize_poly:
-        names_to_normalize = list(set(new_names).difference(set(feature_names)))
-        Xds = X_with_poly_features.to_dataset(dim=feature_dim)
-        for da_name in names_to_normalize:
-            Xds[da_name] = normalize_xr(Xds[da_name], norm=1, verbose=False)
-        X_with_poly_features = Xds.to_array(dim=feature_dim).T
-    return X_with_poly_features
 
 
 def _produce_wind_shear(source='singapore', savepath=None):
