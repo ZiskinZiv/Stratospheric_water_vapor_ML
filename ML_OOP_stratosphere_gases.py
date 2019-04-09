@@ -15,8 +15,12 @@ class parameters:
     def __init__(self,
                  model_name='LR',
                  season='all',
-                 regressors_file='Regressors_d2.nc',
+                 regressors_file='Regressors.nc',
                  swoosh_field='combinedanomfillanom',
+                 regressors=None,   # default None means all regressors
+                 reg_except=None,
+                 poly_features=None,
+                 time_shift=None,
                  data_name='swoosh',
                  species='h2o',
                  time_period=None,
@@ -28,6 +32,10 @@ class parameters:
         self.delimeter = '_'
         self.model_name = model_name
         self.season = season
+        self.time_shift = time_shift
+        self.poly_features = poly_features
+        self.reg_except = reg_except
+        self.regressors = regressors
         self.reg_selection = 'R1'   # All
         self.regressors_file = regressors_file
 #        self.sw_field_list = ['combinedanomfillanom', 'combinedanomfill',
@@ -181,13 +189,31 @@ class ML_Switcher(object):
 
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
-           regressors_file='Regressors.nc', time_period=None, cv=None,
-           regressors=None, reg_except=None):
+           poly_features=None, time_period=None, cv=None,
+           regressors=['qbo_1', 'qbo_2', 'ch4'], reg_except=None,
+           time_shift=None):
     """Run ML model with...
     regressors = all"""
+    def parse_cv(cv):
+        from sklearn.model_selection import KFold
+        from sklearn.model_selection import RepeatedKFold
+        """input:cv number or string"""
+        # check for integer:
+        if isinstance(cv, int):
+            return KFold(cv)
+        # check for 2-tuple integer:
+        if (isinstance(cv, tuple) and all(isinstance(n, int) for n in cv)
+                and len(cv) == 2):
+            return RepeatedKFold(n_splits=cv[0], n_repeats=cv[1],
+                                 random_state=42)
+        if not hasattr(cv, 'split') or isinstance(cv, str):
+            raise ValueError("Expected cv as an integer, cross-validation "
+                             "object (from sklearn.model_selection) "
+                             ". Got %s." % cv)
+        return cv
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
-    keys_to_remove = ['RI_proc', 'ml_params', 'cv', 'regressors', 'reg_except']
+    keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = parameters(**arg_dict)
     # p.from_dict(arg_dict)
@@ -196,52 +222,50 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     # pre proccess:
     X, y = pre_proccess(p)
     # unpack regressors:
-    if regressors is None:
-        # default selection:
-        reg_select = ['qbo_1', 'qbo_2', 'ch4']
-    elif regressors != 'all':
-        # convert str to list:
-        if isinstance(regressors, str):
-            regressors = regressors.split(' ')
-        # select regressors:
-        reg_select = [x for x in regressors]
-    if reg_except is not None and regressors == 'all':
-        reg_select = [x for x in X.regressors.values if x not in reg_except]
-    X = X.sel({'regressors': reg_select})
+
     print('Running with regressors: ', ', '.join([x for x in
                                                   X.regressors.values]))
     # wrap ML_model:
     model = ImprovedRegressor(ml_model, reshapes='regressors',
                               sample_dim='time')
-    if cv is not None:
+    # check for CV builtin model(e.g., LassoCV, GridSearchCV):
+    if cv is not None and hasattr(ml_model, 'cv') and not RI_proc:
+        cv = parse_cv(cv)
+        print(cv)
+#        if hasattr(ml_model, 'alphas'):
+#            from yellowbrick.regressor import AlphaSelection
+#            ml_model.set_params(cv=cv)
+#            print(model.estimator)
+#            visualizer = AlphaSelection(ml_model)
+#            visualizer.fit(X, y)
+#            g = visualizer.poof()
+#            model.fit(X, y)
+#        else:
+        model.set_params(cv=cv)
+        print(model.estimator)
+        model.fit(X, y)
+    # next, just do cross-val with models without CV(e.g., LinearRegression):
+    elif cv is not None and not hasattr(ml_model, 'cv') and not RI_proc:
         from sklearn.multioutput import MultiOutputRegressor
         from sklearn.model_selection import cross_validate
-        from sklearn.model_selection import RepeatedKFold
-        # TODO: fix rkf behavior
-        # inst. Kfold:
-        rkf = RepeatedKFold(n_splits=cv, n_repeats=5, random_state=42)
+        cv = parse_cv(cv)
+        print(cv)
         # get multi-target dim:
         mt_dim = [x for x in y.dims if x != 'time'][0]
         mul = (MultiOutputRegressor(model.estimator))
+        print(mul)
         mul.fit(X, y)
         cv_results = [cross_validate(mul.estimators_[i], X,
                                      y.isel({mt_dim: i}),
-                                     cv=rkf, scoring='r2') for i in
+                                     cv=cv, scoring='r2') for i in
                       range(len(mul.estimators_))]
         cds = proccess_cv_results(cv_results, y, 'time')
         return cds
-    print(model.estimator)
-    if RI_proc:
+    elif RI_proc:
         model.make_RI(X, y)
     else:
-        if model_name == 'MTLASSOCV' or model_name == 'MTENETCV':
-            from yellowbrick.regressor import AlphaSelection
-            visualizer = AlphaSelection(ml_model)
-            visualizer.fit(X, y)
-            g = visualizer.poof()
-            model.fit(X, y)
-        else:
-            model.fit(X, y)
+        print(model.estimator)
+        model.fit(X, y)
     # append parameters to model class:
     model.run_parameters_ = p
     return model
@@ -361,12 +385,16 @@ def pre_proccess(params):
     import os
     path = os.getcwd() + '/regressors/'
     reg_file = params.regressors_file
+    reg_list = params.regressors
+    reg_except = params.reg_except
+    poly = params.poly_features
     # load X i.e., regressors
     regressors = xr.open_dataset(path + reg_file)
     # unpack params to vars
     dname = params.data_name
     species = params.species
     season = params.season
+    shift = params.time_shift
     # model = params.model
     special_run = params.special_run
     time_period = params.time_period
@@ -436,12 +464,71 @@ def pre_proccess(params):
     # saving attrs:
     attrs = [da[dim].attrs for dim in da.dims]
     da.attrs['coords_attrs'] = dict(zip(da.dims, attrs))
-    # stacking:
+    # stacking reg:
     reg_names = [x for x in regressors.data_vars.keys()]
     reg_stacked = regressors[reg_names].to_array(dim='regressors').T
+    # reg_select behivior:
+    reg_select = [x for x in reg_stacked.regressors.values]
+    if reg_list is not None:  # it is the default
+        # convert str to list:
+        if isinstance(regressors, str):
+            regressors = regressors.split(' ')
+        # select regressors:
+        reg_select = [x for x in reg_list]
+    if reg_except is not None and reg_list is None:
+        reg_select = [x for x in reg_stacked.regressors.values if x not in
+                      reg_except]
+    reg_stacked = reg_stacked.sel({'regressors': reg_select})
+    # poly features:
+    if poly is not None:
+        reg_stacked = poly_features(reg_stacked, degree=poly)
+    if shift is not None:
+        da = da.shift({'time': shift})
+        da = da.dropna('time')
+        reg_stacked = reg_stacked.sel(time=da.time)
+    # da stacking:
     dims_to_stack = [x for x in da.dims if x != 'time']
     da = da.stack(samples=dims_to_stack).squeeze()
     return reg_stacked, da
+
+
+def poly_features(X, feature_dim='regressors', degree=2,
+                  interaction_only=False, include_bias=False,
+                  normalize_poly=False, plot=False):
+    from sklearn.preprocessing import PolynomialFeatures
+    import xarray as xr
+    from aux_functions_strat import normalize_xr
+    sample_dim = [x for x in X.dims if x != feature_dim][0]
+    # Vars = ['x' + str(n) for n in range(X.shape[1])]
+    # dic = dict(zip(Vars, X[dim_name].values))
+    poly = PolynomialFeatures(degree=degree, interaction_only=interaction_only,
+                              include_bias=include_bias)
+    X_new = poly.fit_transform(X)
+    feature_names = [x for x in X[feature_dim].values]
+    new_names = poly.get_feature_names(feature_names)
+    new_names = [x.replace(' ', '*') for x in new_names]
+    X_with_poly_features = xr.DataArray(X_new, dims=[sample_dim, feature_dim])
+    X_with_poly_features[sample_dim] = X[sample_dim]
+    X_with_poly_features[feature_dim] = new_names
+    X_with_poly_features.attrs = X.attrs
+    X_with_poly_features.name = 'Polynomial Features'
+    if normalize_poly:
+        names_to_normalize = list(set(new_names).difference(set(feature_names)))
+        Xds = X_with_poly_features.to_dataset(dim=feature_dim)
+        for da_name in names_to_normalize:
+            Xds[da_name] = normalize_xr(Xds[da_name], norm=1, verbose=False)
+        X_with_poly_features = Xds.to_array(dim=feature_dim).T
+    if plot:
+        import seaborn as sns
+        ds = X_with_poly_features.to_dataset(dim='regressors').squeeze()
+        le = len(ds.data_vars)
+        df = ds.to_dataframe()
+        if le <= 20:
+            sns.heatmap(df.corr(), annot=True, fmt='.2f', cmap='bwr',
+                        center=0.0)
+        else:
+            sns.heatmap(df.corr(), cmap='bwr', center=0.0)
+    return X_with_poly_features
 
 
 class ImprovedRegressor(RegressorWrapper):
