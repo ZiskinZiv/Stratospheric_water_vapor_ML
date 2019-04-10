@@ -18,8 +18,9 @@ class parameters:
                  regressors_file='Regressors.nc',
                  swoosh_field='combinedanomfillanom',
                  regressors=None,   # default None means all regressors
-                 reg_except=None,
+                 reg_add_sub=None,
                  poly_features=None,
+                 special_run=None,
                  time_shift=None,
                  data_name='swoosh',
                  species='h2o',
@@ -34,9 +35,9 @@ class parameters:
         self.season = season
         self.time_shift = time_shift
         self.poly_features = poly_features
-        self.reg_except = reg_except
+        self.reg_add_sub = reg_add_sub
         self.regressors = regressors
-        self.reg_selection = 'R1'   # All
+        self.special_run = special_run
         self.regressors_file = regressors_file
 #        self.sw_field_list = ['combinedanomfillanom', 'combinedanomfill',
 #                              'combinedanom', 'combinedeqfillanom',
@@ -44,10 +45,8 @@ class parameters:
 #                              'combinedseas', 'combined']
         self.swoosh_field = swoosh_field
         self.run_on_cluster = False  # False to run locally mainly to test stuff
-        self.special_run = 'normal'
         self.data_name = data_name  # merra, era5
         self.species = species  # can be T or phi for era5
-        self.shift = None
         self.time_period = time_period
         self.area_mean = area_mean
         self.original_data_file = original_data_file  # original data filename (in work_path)
@@ -190,8 +189,8 @@ class ML_Switcher(object):
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=None, cv=None,
-           regressors=['qbo_1', 'qbo_2', 'ch4'], reg_except=None,
-           time_shift=None):
+           regressors=['qbo_1', 'qbo_2', 'ch4'], reg_add_sub=None,
+           time_shift=None, special_run=None):
     """Run ML model with...
     regressors = all"""
     def parse_cv(cv):
@@ -242,7 +241,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #            model.fit(X, y)
 #        else:
         model.set_params(cv=cv)
-        print(model.estimator)
+        print(model.estimator_)
         model.fit(X, y)
     # next, just do cross-val with models without CV(e.g., LinearRegression):
     elif cv is not None and not hasattr(ml_model, 'cv') and not RI_proc:
@@ -386,7 +385,7 @@ def pre_proccess(params):
     path = os.getcwd() + '/regressors/'
     reg_file = params.regressors_file
     reg_list = params.regressors
-    reg_except = params.reg_except
+    reg_add_sub = params.reg_add_sub
     poly = params.poly_features
     # load X i.e., regressors
     regressors = xr.open_dataset(path + reg_file)
@@ -467,7 +466,7 @@ def pre_proccess(params):
     # stacking reg:
     reg_names = [x for x in regressors.data_vars.keys()]
     reg_stacked = regressors[reg_names].to_array(dim='regressors').T
-    # reg_select behivior:
+    # reg_select behaviour:
     reg_select = [x for x in reg_stacked.regressors.values]
     if reg_list is not None:  # it is the default
         # convert str to list:
@@ -475,15 +474,39 @@ def pre_proccess(params):
             regressors = regressors.split(' ')
         # select regressors:
         reg_select = [x for x in reg_list]
-    if reg_except is not None and reg_list is None:
-        reg_select = [x for x in reg_stacked.regressors.values if x not in
-                      reg_except]
-    reg_stacked = reg_stacked.sel({'regressors': reg_select})
+    else:
+        reg_select = [x for x in reg_stacked.regressors.values]
+    # if i want to add or substract regressor:
+    if reg_add_sub is not None:
+        # make sure that reg_add_sub is 2-tuple and consist or str:
+        if (isinstance(reg_add_sub, tuple) and
+                len(reg_add_sub) == 2):
+            reg_add = reg_add_sub[0]
+            reg_sub = reg_add_sub[1]
+            if reg_add is not None and isinstance(reg_add, str):
+                reg_select = [x for x in reg_select if x != reg_add]
+                reg_select.append(reg_add)
+            if reg_sub is not None and isinstance(reg_sub, str):
+                reg_select = [x for x in reg_select if x != reg_sub]
+        else:
+            raise ValueError("Expected reg_add_sub as an 2-tuple of string"
+                             ". Got %s." % reg_add_sub)
+    try:
+        reg_stacked = reg_stacked.sel({'regressors': reg_select})
+    except KeyError:
+        raise KeyError('The regressor selection cannot find %s' % reg_select)
     # poly features:
     if poly is not None:
         reg_stacked = poly_features(reg_stacked, degree=poly)
+    # shift all da shift months:
     if shift is not None:
         da = da.shift({'time': shift})
+        da = da.dropna('time')
+        reg_stacked = reg_stacked.sel(time=da.time)
+    # special run case:
+    if special_run == 'level_shift':
+        shift_da = create_shift_da(sel='swoosh1')
+        da = xr_shift(da, shift_da, 'time')
         da = da.dropna('time')
         reg_stacked = reg_stacked.sel(time=da.time)
     # da stacking:
@@ -529,6 +552,38 @@ def poly_features(X, feature_dim='regressors', degree=2,
         else:
             sns.heatmap(df.corr(), cmap='bwr', center=0.0)
     return X_with_poly_features
+
+
+def create_shift_da(sel='swoosh1'):
+    import xarray as xr
+    import numpy as np
+    if sel == 'swoosh1':
+        level = xr.open_dataset(work_path + 'swoosh_latpress-10deg.nc').level
+        level = level.sel(level=slice(83, 10))
+        shift = np.array([0,  -2,  -3,  -5,  -7,  -9, -10, -12, -14, -16,
+                          -17, -19])
+        shift = shift.astype(int)
+        da = xr.DataArray(shift, dims='level')
+        da['level'] = level
+        da.name = 'shift'
+    return da
+
+
+def xr_shift(da, dim_shift_da, dim_to_shift):
+    import xarray as xr
+    da_list = []
+    dim = [x for x in dim_shift_da.dims]
+    dim = dim_shift_da[dim[0]]
+    dif = list(set(da[dim.name].values).difference(set(dim_shift_da[dim.name].values)))
+    for i in range(len(dim_shift_da)):
+        da_list.append(da.sel({dim.name: dim[i].values},
+                              method='nearest').shift({dim_to_shift:
+                                                       dim_shift_da[i].values.item()}))
+    for d in dif:
+        da_list.append(da.sel({dim.name: d}, method='nearest'))
+    da_out = xr.concat(da_list, dim=dim.name)
+    da_out = da_out.sortby(dim.name, ascending=False)
+    return da_out
 
 
 class ImprovedRegressor(RegressorWrapper):
@@ -638,7 +693,7 @@ class ImprovedRegressor(RegressorWrapper):
         rds.attrs['error_types'] = error_types
         rds.attrs['sample_dim'] = self.sample_dim
         rds.attrs['feature_dim'] = feature_dim
-        text_blue('Producing results...')
+        text_blue('Producing results...Done!')
         return rds
 
     def make_RI(self, X, y):
