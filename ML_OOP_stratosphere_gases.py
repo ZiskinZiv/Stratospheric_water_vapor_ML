@@ -186,30 +186,43 @@ class ML_Switcher(object):
 #        return self.model
 
 
+
+
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=None, cv=None,
            regressors=['qbo_1', 'qbo_2', 'ch4'], reg_add_sub=None,
            time_shift=None, special_run=None):
     """Run ML model with...
-    regressors = all"""
+    regressors = None
+    special_run is a dict with key as type of run, value is values passed to
+    the special run"""
     def parse_cv(cv):
         from sklearn.model_selection import KFold
         from sklearn.model_selection import RepeatedKFold
         """input:cv number or string"""
         # check for integer:
-        if isinstance(cv, int):
-            return KFold(cv)
-        # check for 2-tuple integer:
-        if (isinstance(cv, tuple) and all(isinstance(n, int) for n in cv)
-                and len(cv) == 2):
-            return RepeatedKFold(n_splits=cv[0], n_repeats=cv[1],
+        if 'kfold' in cv.keys():
+            n_splits = cv['kfold']
+            print('CV is KFold with n_splits={}'.format(n_splits))
+            return KFold(n_splits=n_splits)
+        if 'rkfold' in cv.keys():
+            n_splits = cv['rkfold'][0]
+            n_repeats = cv['rkfold'][1]
+            print('CV is ReapetedKFold with n_splits={},'.format(n_splits) +
+                  ' n_repeates={}'.format(n_repeats))
+            return RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats,
                                  random_state=42)
-        if not hasattr(cv, 'split') or isinstance(cv, str):
-            raise ValueError("Expected cv as an integer, cross-validation "
-                             "object (from sklearn.model_selection) "
-                             ". Got %s." % cv)
-        return cv
+        # check for 2-tuple integer:
+#        if (isinstance(cv, tuple) and all(isinstance(n, int) for n in cv) and
+#                len(cv) == 2):
+#            return RepeatedKFold(n_splits=cv[0], n_repeats=cv[1],
+#                                 random_state=42)
+#        if not hasattr(cv, 'split') or isinstance(cv, str):
+#            raise ValueError("Expected cv as an integer, cross-validation "
+#                             "object (from sklearn.model_selection) "
+#                             ". Got %s." % cv)
+#        return cv
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
     keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv']
@@ -227,10 +240,47 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     # wrap ML_model:
     model = ImprovedRegressor(ml_model, reshapes='regressors',
                               sample_dim='time')
+    # run special mode: optimize_time_shift:
+    if (p.special_run is not None
+            and 'optimize_time_shift' in p.special_run.keys()):
+        print(model.estimator)
+        import numpy as np
+        import xarray as xr
+        from matplotlib.ticker import ScalarFormatter
+        import matplotlib.pyplot as plt
+        min_shift, max_shift = p.special_run['optimize_time_shift']
+        print('Running with special mode: optimize_time_shift,' +
+              ' with months shifts: {}, {}'.format(str(min_shift),
+                                                   str(max_shift)))
+        plt.figure()
+        # a full year + and -:
+        shifts = np.arange(min_shift, max_shift + 1)
+        opt_results = []
+        for shift in shifts:
+            y_shifted = y.shift({'time': shift})
+            y_shifted = y_shifted.dropna('time')
+            X_shifted = X.sel(time=y_shifted.time)
+#            print('shifting target data {} months'.format(str(shift)))
+#            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
+#                  y_shifted.time.size))
+            model.fit(X_shifted, y_shifted, verbose=False)
+            opt_results.append(model.results_)
+        rds = xr.concat(opt_results, dim='months_shift')
+        rds['months_shift'] = shifts
+        rds['level_month_shift'] = rds.months_shift.isel(
+                months_shift=rds.r2_adj.argmax(dim='months_shift'))
+        rds.level_month_shift.plot(y='level', color='r', marker='.',
+                                   yincrease=False)
+        rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False, levels=21)
+        ax = plt.gca()
+        ax.set_title(', '.join(X.regressors.values.tolist()))
+        ax.yaxis.set_major_formatter(ScalarFormatter())
+        print('Done!')
+        return rds
     # check for CV builtin model(e.g., LassoCV, GridSearchCV):
-    if cv is not None and hasattr(ml_model, 'cv') and not RI_proc:
-        cv = parse_cv(cv)
-        print(cv)
+    if cv is not None:
+        if hasattr(ml_model, 'cv') and not RI_proc:
+            cv = parse_cv(cv)
 #        if hasattr(ml_model, 'alphas'):
 #            from yellowbrick.regressor import AlphaSelection
 #            ml_model.set_params(cv=cv)
@@ -240,26 +290,25 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #            g = visualizer.poof()
 #            model.fit(X, y)
 #        else:
-        model.set_params(cv=cv)
-        print(model.estimator_)
-        model.fit(X, y)
+            model.set_params(cv=cv)
+            print(model.estimator_)
+            model.fit(X, y)
     # next, just do cross-val with models without CV(e.g., LinearRegression):
-    elif cv is not None and not hasattr(ml_model, 'cv') and not RI_proc:
-        from sklearn.multioutput import MultiOutputRegressor
-        from sklearn.model_selection import cross_validate
-        cv = parse_cv(cv)
-        print(cv)
-        # get multi-target dim:
-        mt_dim = [x for x in y.dims if x != 'time'][0]
-        mul = (MultiOutputRegressor(model.estimator))
-        print(mul)
-        mul.fit(X, y)
-        cv_results = [cross_validate(mul.estimators_[i], X,
-                                     y.isel({mt_dim: i}),
-                                     cv=cv, scoring='r2') for i in
-                      range(len(mul.estimators_))]
-        cds = proccess_cv_results(cv_results, y, 'time')
-        return cds
+        if not hasattr(ml_model, 'cv') and not RI_proc:
+            from sklearn.multioutput import MultiOutputRegressor
+            from sklearn.model_selection import cross_validate
+            cv = parse_cv(cv)
+            # get multi-target dim:
+            mt_dim = [x for x in y.dims if x != 'time'][0]
+            mul = (MultiOutputRegressor(model.estimator))
+            print(mul)
+            mul.fit(X, y)
+            cv_results = [cross_validate(mul.estimators_[i], X,
+                                         y.isel({mt_dim: i}),
+                                         cv=cv, scoring='r2') for i in
+                          range(len(mul.estimators_))]
+            cds = proccess_cv_results(cv_results, y, 'time')
+            return cds
     elif RI_proc:
         model.make_RI(X, y)
     else:
@@ -459,7 +508,7 @@ def pre_proccess(params):
 #        shift_da = create_shift_da(sel=params.shift)
 #        da = xr_shift(da, shift_da, 'time')
 #        da = da.dropna('time')
-#        regressors = regressors.sel(time=da.time)
+#        regressors = regressors.sel(time=da.tioptimize_time_shiftme)
     # saving attrs:
     attrs = [da[dim].attrs for dim in da.dims]
     da.attrs['coords_attrs'] = dict(zip(da.dims, attrs))
@@ -478,19 +527,25 @@ def pre_proccess(params):
         reg_select = [x for x in reg_stacked.regressors.values]
     # if i want to add or substract regressor:
     if reg_add_sub is not None:
-        # make sure that reg_add_sub is 2-tuple and consist or str:
-        if (isinstance(reg_add_sub, tuple) and
-                len(reg_add_sub) == 2):
-            reg_add = reg_add_sub[0]
-            reg_sub = reg_add_sub[1]
-            if reg_add is not None and isinstance(reg_add, str):
-                reg_select = [x for x in reg_select if x != reg_add]
-                reg_select.append(reg_add)
-            if reg_sub is not None and isinstance(reg_sub, str):
-                reg_select = [x for x in reg_select if x != reg_sub]
-        else:
-            raise ValueError("Expected reg_add_sub as an 2-tuple of string"
-                             ". Got %s." % reg_add_sub)
+        if 'add' in reg_add_sub.keys():
+            regs_to_add = reg_add_sub['add']
+            reg_select = list(set(reg_select + regs_to_add))
+        if 'sub' in reg_add_sub.keys():
+            regs_to_sub = reg_add_sub['sub']
+            reg_select = list(set(reg_select).difference(set(regs_to_sub)))
+#        # make sure that reg_add_sub is 2-tuple and consist or str:
+#        if (isinstance(reg_add_sub, tuple) and
+#                len(reg_add_sub) == 2):
+#            reg_add = reg_add_sub[0]
+#            reg_sub = reg_add_sub[1]
+#            if reg_add is not None and isinstance(reg_add, str):
+#                reg_select = [x for x in reg_select if x != reg_add]
+#                reg_select.append(reg_add)
+#            if reg_sub is not None and isinstance(reg_sub, str):
+#                reg_select = [x for x in reg_select if x != reg_sub]
+#        else:
+#            raise ValueError("Expected reg_add_sub as an 2-tuple of string"
+#                             ". Got %s." % reg_add_sub)
     try:
         reg_stacked = reg_stacked.sel({'regressors': reg_select})
     except KeyError:
@@ -504,8 +559,12 @@ def pre_proccess(params):
         da = da.dropna('time')
         reg_stacked = reg_stacked.sel(time=da.time)
     # special run case:
-    if special_run == 'level_shift':
-        shift_da = create_shift_da(sel='swoosh1')
+    if special_run is not None and 'level_shift' in special_run.keys():
+        scheme = special_run['level_shift']
+        print('Running with special mode: level_shift , ' +
+              'with scheme: {}'.format(scheme))
+        shift_da = create_shift_da(path=params.work_path,
+                                   shift_scheme=scheme)
         da = xr_shift(da, shift_da, 'time')
         da = da.dropna('time')
         reg_stacked = reg_stacked.sel(time=da.time)
@@ -554,14 +613,24 @@ def poly_features(X, feature_dim='regressors', degree=2,
     return X_with_poly_features
 
 
-def create_shift_da(sel='swoosh1'):
+def create_shift_da(path, shift_scheme='swoosh1'):
     import xarray as xr
     import numpy as np
-    if sel == 'swoosh1':
-        level = xr.open_dataset(work_path + 'swoosh_latpress-10deg.nc').level
+    if shift_scheme == 'swoosh1':
+        level = xr.open_dataset(path + 'swoosh_latpress-10deg.nc').level
         level = level.sel(level=slice(83, 10))
         shift = np.array([0,  -2,  -3,  -5,  -7,  -9, -10, -12, -14, -16,
                           -17, -19])
+        shift = shift.astype(int)
+        da = xr.DataArray(shift, dims='level')
+        da['level'] = level
+        da.name = 'shift'
+    if shift_scheme == 'from_optimization':
+        level = xr.open_dataset(path + 'swoosh_latpress-10deg.nc').level
+        level = level.sel(level=slice(100, 1))
+        shift = np.array([-4,  -6,  -7,  -9, -12, -12, -12,  10,  10,   6,
+                          5,   5,   2, -10, -12,  -6,  -6,  -1,  -2, -12, -12,
+                          -12, -12, -12, -12])
         shift = shift.astype(int)
         da = xr.DataArray(shift, dims='level')
         da['level'] = level
@@ -593,7 +662,7 @@ class ImprovedRegressor(RegressorWrapper):
         # **kwargs
         super().__init__(estimator, reshapes, sample_dim, **kwargs)
 
-    def fit(self, X, y=None, **fit_params):
+    def fit(self, X, y=None, verbose=True, **fit_params):
         """ A wrapper around the fitting function.
         Improved: adds the X_ and y_ and results_ attrs to class.
         Parameters
@@ -610,14 +679,14 @@ class ImprovedRegressor(RegressorWrapper):
         """
         self = super().fit(X, y, **fit_params)
         # set results attr
-        self.results_ = self.make_results(X, y)
+        self.results_ = self.make_results(X, y, verbose)
         setattr(self, 'results_', self.results_)
         # set X_ and y_ attrs:
         setattr(self, 'X_', X)
         setattr(self, 'y_', y)
         return self
 
-    def make_results(self, X, y):
+    def make_results(self, X, y, verbose=True):
         """ make results for all models type into xarray"""
         from aux_functions_strat import xr_order
         import xarray as xr
@@ -693,7 +762,8 @@ class ImprovedRegressor(RegressorWrapper):
         rds.attrs['error_types'] = error_types
         rds.attrs['sample_dim'] = self.sample_dim
         rds.attrs['feature_dim'] = feature_dim
-        text_blue('Producing results...Done!')
+        if verbose:
+            text_blue('Producing results...Done!')
         return rds
 
     def make_RI(self, X, y):
@@ -728,6 +798,7 @@ class ImprovedRegressor(RegressorWrapper):
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
         import pandas as pd
+        # TODO: add area_mean support
         if not hasattr(self, 'results_'):
             raise AttributeError('No results yet... run model.fit(X,y) first!')
         rds = self.results_
