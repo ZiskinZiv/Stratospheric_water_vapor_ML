@@ -614,6 +614,7 @@ def poly_features(X, feature_dim='regressors', degree=2,
 
 
 def create_shift_da(path, shift_scheme='swoosh1'):
+    """create dim_shift_da with certain scheme to be used in xr_shift"""
     import xarray as xr
     import numpy as np
     if shift_scheme == 'swoosh1':
@@ -638,20 +639,30 @@ def create_shift_da(path, shift_scheme='swoosh1'):
     return da
 
 
-def xr_shift(da, dim_shift_da, dim_to_shift):
+def xr_shift(da, dim_shift_da, dim_to_shift='time'):
     import xarray as xr
+    """shifts da with dim_shift_da dataarray containing dim and 'shift' dim.
+    important: this function is called before stacking!"""
+    # find the dim that not to be shifted:
+    dim = [x for x in dim_shift_da.dims if x != dim_to_shift]
+    assert len(dim) == 1
+    coord_da = dim_shift_da[''.join(dim)]
+    # get the differences between the two dataarrays's coords:
+    dif = list(set(da[coord_da.name].values).
+               difference(set(dim_shift_da[coord_da.name].values)))
+    # shift each coords[i] with the amount spesified in dim_shift_da.values:
     da_list = []
-    dim = [x for x in dim_shift_da.dims]
-    dim = dim_shift_da[dim[0]]
-    dif = list(set(da[dim.name].values).difference(set(dim_shift_da[dim.name].values)))
-    for i in range(len(dim_shift_da)):
-        da_list.append(da.sel({dim.name: dim[i].values},
+    for i in range(dim_shift_da.size):
+        da_list.append(da.sel({coord_da.name: coord_da[i].values},
                               method='nearest').shift({dim_to_shift:
-                                                       dim_shift_da[i].values.item()}))
+                                                       dim_shift_da[i].
+                                                       values.item()}))
+    # last: gather all coords that were not shifted
     for d in dif:
         da_list.append(da.sel({dim.name: d}, method='nearest'))
-    da_out = xr.concat(da_list, dim=dim.name)
-    da_out = da_out.sortby(dim.name, ascending=False)
+    # combine everything into the same data array and sort:
+    da_out = xr.concat(da_list, dim=coord_da.name)
+    da_out = da_out.sortby(coord_da.name, ascending=False)
     return da_out
 
 
