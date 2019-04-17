@@ -196,7 +196,9 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
-    the special run"""
+    the special run
+    example special_run={'optimize_time_shift':(-12,12)}
+    use optimize_time_shift with area_mean=True"""
     def parse_cv(cv):
         from sklearn.model_selection import KFold
         from sklearn.model_selection import RepeatedKFold
@@ -269,8 +271,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         rds['months_shift'] = shifts
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
-        rds.level_month_shift.plot(y='level', color='r', marker='.',
-                                   yincrease=False)
+        rds.level_month_shift.plot.line('r.-', y='level', yincrease=False)
         rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False, levels=21)
         ax = plt.gca()
         ax.set_title(', '.join(X.regressors.values.tolist()))
