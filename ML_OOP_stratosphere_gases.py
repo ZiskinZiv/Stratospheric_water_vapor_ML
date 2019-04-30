@@ -242,7 +242,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     # wrap ML_model:
     model = ImprovedRegressor(ml_model, reshapes='regressors',
                               sample_dim='time')
-    # run special mode: optimize_time_shift:
+    # run special mode: optimize_time_shift !only with area_mean=true:
     if (p.special_run is not None
             and 'optimize_time_shift' in p.special_run.keys()):
         print(model.estimator)
@@ -262,6 +262,44 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             y_shifted = y.shift({'time': shift})
             y_shifted = y_shifted.dropna('time')
             X_shifted = X.sel(time=y_shifted.time)
+#            print('shifting target data {} months'.format(str(shift)))
+#            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
+#                  y_shifted.time.size))
+            model.fit(X_shifted, y_shifted, verbose=False)
+            opt_results.append(model.results_)
+        rds = xr.concat(opt_results, dim='months_shift')
+        rds['months_shift'] = shifts
+        rds['level_month_shift'] = rds.months_shift.isel(
+                months_shift=rds.r2_adj.argmax(dim='months_shift'))
+        rds.level_month_shift.plot.line('r.-', y='level', yincrease=False)
+        rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False, levels=21)
+        ax = plt.gca()
+        ax.set_title(', '.join(X.regressors.values.tolist()))
+        ax.yaxis.set_major_formatter(ScalarFormatter())
+        print('Done!')
+        return rds
+    # run special mode: optimize_reg_shift !only with area_mean=true:
+    if (p.special_run is not None
+            and 'optimize_reg_shift' in p.special_run.keys()):  
+        print(model.estimator)
+        import numpy as np
+        import xarray as xr
+        from matplotlib.ticker import ScalarFormatter
+        import matplotlib.pyplot as plt
+        min_shift, max_shift = p.special_run['optimize_time_shift']
+        print('Running with special mode: optimize_reg_shift,' +
+              ' with months shifts: {}, {}'.format(str(min_shift),
+                                                   str(max_shift)))
+        plt.figure()
+        # a full year + and -:
+        shifts = np.arange(min_shift, max_shift + 1)
+        opt_results = []
+        X = X.sel(regressors=['qbo_1', 'qbo_2', 'ch4', 'cold'])
+        reg_shift = {'qbo_1': shifts, 'qbo_2': shifts, 'cold': shifts}
+        for reg in reg_shift.keys():
+            for shift in shifts:
+                Xcopy = reg_shift(X, )
+                y = y.sel(time=Xcopy.time)
 #            print('shifting target data {} months'.format(str(shift)))
 #            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
 #                  y_shifted.time.size))
@@ -573,6 +611,17 @@ def pre_proccess(params):
     dims_to_stack = [x for x in da.dims if x != 'time']
     da = da.stack(samples=dims_to_stack).squeeze()
     return reg_stacked, da
+
+
+def reg_shift(X, shift_dict):
+    """input is X: regressors dataarray, reg_shift: dict with key:
+        name to shift, value: how many months to shift"""
+    Xcopy = X.copy()
+    ds = Xcopy.to_dataset(dim='regressors')
+    for regressor, time_shift in shift_dict.items():
+        ds[regressor] = ds[regressor].shift(time=time_shift)
+    Xcopy = ds.to_array(dim='regressors').dropna('time').T
+    return Xcopy
 
 
 def poly_features(X, feature_dim='regressors', degree=2,
