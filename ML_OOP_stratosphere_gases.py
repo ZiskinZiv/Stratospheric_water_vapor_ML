@@ -295,16 +295,17 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         shifts = np.arange(min_shift, max_shift + 1)
         opt_results = []
         X = X.sel(regressors=['qbo_1', 'qbo_2', 'ch4', 'cold'])
-        reg_shift = {'qbo_1': shifts, 'qbo_2': shifts, 'cold': shifts}
-        for reg in reg_shift.keys():
+        reg_to_shift = ['qbo_1', 'qbo_2', 'cold']
+        for reg in reg_to_shift:
             for shift in shifts:
-                Xcopy = reg_shift(X, )
-                y = y.sel(time=Xcopy.time)
+                shift_dict = {reg: shift}
+                Xcopy = reg_shift(X, shift_dict)
+                y_shifted = y.sel(time=Xcopy.time)
 #            print('shifting target data {} months'.format(str(shift)))
 #            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
 #                  y_shifted.time.size))
-            model.fit(X_shifted, y_shifted, verbose=False)
-            opt_results.append(model.results_)
+                model.fit(Xcopy, y_shifted, verbose=False)
+                opt_results.append(model.results_)
         rds = xr.concat(opt_results, dim='months_shift')
         rds['months_shift'] = shifts
         rds['level_month_shift'] = rds.months_shift.isel(
