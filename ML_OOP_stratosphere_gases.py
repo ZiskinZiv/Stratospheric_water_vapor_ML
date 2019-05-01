@@ -280,23 +280,24 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         return rds
     # run special mode: optimize_reg_shift !only with area_mean=true:
     if (p.special_run is not None
-            and 'optimize_reg_shift' in p.special_run.keys()):  
+            and 'optimize_reg_shift' in p.special_run.keys()):
         print(model.estimator)
         import numpy as np
         import xarray as xr
         from matplotlib.ticker import ScalarFormatter
         import matplotlib.pyplot as plt
-        min_shift, max_shift = p.special_run['optimize_time_shift']
+        min_shift, max_shift = p.special_run['optimize_reg_shift']
         print('Running with special mode: optimize_reg_shift,' +
               ' with months shifts: {}, {}'.format(str(min_shift),
                                                    str(max_shift)))
-        plt.figure()
+        # plt.figure()
         # a full year + and -:
         shifts = np.arange(min_shift, max_shift + 1)
-        opt_results = []
         X = X.sel(regressors=['qbo_1', 'qbo_2', 'ch4', 'cold'])
         reg_to_shift = ['qbo_1', 'qbo_2', 'cold']
+        reg_results = []
         for reg in reg_to_shift:
+            opt_results = []
             for shift in shifts:
                 shift_dict = {reg: shift}
                 Xcopy = reg_shift(X, shift_dict)
@@ -306,14 +307,25 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #                  y_shifted.time.size))
                 model.fit(Xcopy, y_shifted, verbose=False)
                 opt_results.append(model.results_)
-        rds = xr.concat(opt_results, dim='months_shift')
+            opt_ds = xr.concat(opt_results, dim='months_shift')
+            reg_results.append(opt_ds)
+        rds = xr.concat(reg_results, dim='reg_shifted')
+        rds['reg_shifted'] = reg_to_shift
         rds['months_shift'] = shifts
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
-        rds.level_month_shift.plot.line('r.-', y='level', yincrease=False)
-        rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False, levels=21)
+        fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
+                                         levels=21, col='reg_shifted')
+        for n_regs in range(len(fg.axes[0])):
+            rds.isel(reg_shifted=n_regs).level_month_shift.plot.line('r.-',
+                                                                     y='level',
+                                                                     yincrease=False,
+                                                                     ax=fg.axes[0][n_regs])
         ax = plt.gca()
-        ax.set_title(', '.join(X.regressors.values.tolist()))
+        # ax.set_title(', '.join(X.regressors.values.tolist()))
+        plt.suptitle(', '.join(X.regressors.values.tolist()),
+                     fontweight='bold')
+        plt.subplots_adjust(top=0.85, right=0.82)
         ax.yaxis.set_major_formatter(ScalarFormatter())
         print('Done!')
         return rds
