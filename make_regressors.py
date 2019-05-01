@@ -54,9 +54,11 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
         savepath = os.getcwd() + '/regressors/'
     # bdc:
     bdc = load_regressor(reg_file_dict['bdc'], plot=False, deseason=True)
+    bdc = bdc.rolling(time=3).mean()
     bdc.name = 'bdc'
     # t500
     t500 = load_regressor(reg_file_dict['t500'], plot=False, deseason=True)
+    t500 = t500.rolling(time=3).mean()
     t500.name = 't500'
     # ENSO
     enso = load_regressor(reg_file_dict['enso'], plot=False, deseason=False)
@@ -76,7 +78,8 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
     # ghg = load_regressor(reg_file_dict['ghg'], plot=False, deseason=False)
     # ghg.name = 'ghg'
     # get cold point:
-    cold = load_regressor(reg_file_dict['cold'], plot=False, deseason=False)
+    cold = load_regressor(reg_file_dict['cold'], plot=False, deseason=True)
+    cold = cold.rolling(time=3).mean()
     cold.name = 'cold'
     # get olr:
     olr = load_regressor(reg_file_dict['olr'], plot=False, deseason=True)
@@ -104,8 +107,8 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
 #                           normalize_poly=False)
 #        ds = da.to_dataset(dim='regressors')
 #        name = 'Regressors_d' + str(poly)
-    else:
-        name = 'Regressors'
+#    else:
+#     name = 'Regressors'
     if normalize:
         ds = ds.apply(aux.normalize_xr, norm=1,
                       keep_attrs=True, verbose=False)
@@ -238,8 +241,13 @@ def _produce_cold_point(savepath=None, lonslice=None):
     if lonslice is None:
         # cold_point = era5.sel(level=100).quantile(0.1, ['lat',
         #                                                'lon'])
-        cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
-                                                         'lon'])
+        cold_point = era5.sel(level=100)
+        cold_point = cold_point.mean('lon')
+        cold_point = cold_point.mean('lat')
+        # cold_point = cold_point.rolling(time=3).mean()
+        
+        # cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
+        #                                                  'lon'])
     else:
         # cold_point = era5.sel(level=100).sel(lon=slice(*lonslice)).quantile(
         #    0.1, ['lat', 'lon'])
