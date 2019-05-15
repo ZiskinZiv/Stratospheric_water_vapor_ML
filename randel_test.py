@@ -70,8 +70,29 @@ def get_randel_corr(work_path):
     return
 
 
+def lat_mean(da, method='cos', dim='lat', copy_attrs=True):
+    import numpy as np
+    if method == 'cos':
+        weights = np.cos(np.deg2rad(da[dim].values))
+        da_mean = (weights * da).sum(dim) / sum(weights)
+    if copy_attrs:
+        da_mean.attrs = da.attrs
+    return da_mean
+
+
 def get_coldest_point(t_path, savepath=None):
     """create coldest point index by using era5 4xdaily data"""
+    # run in cluster since data transfer is the bottleneck
+    import xarray as xr
+    from dask.diagnostics import ProgressBar
+    print('Opening large dataset using dask + xarray:')
+    T = xr.open_mfdataset(t_path + 'era5_T_4*.nc')
+    T = T.sel(latitude=slice(15, -15))
+    T = T.sel(level=slice(50, 150))
+    T = T.rename({'longitude': 'lon', 'latitude': 'lat'})
+    T = T.sortby('lat')
+#     T = T.sortby('lat')
+    
     # 1)open mfdataset the temperature data
     # 2)selecting -15 to 15 lat, and maybe the three levels (125,100,85)
     # 2a) alternativly, find the 3 lowest temperature for each lat/lon in 
@@ -79,8 +100,12 @@ def get_coldest_point(t_path, savepath=None):
     # 3) run a quadratic fit to the three points coldest points and select
     # the minimum, put it in the lat/lon grid.
     # 4) resample to monthly means and average over lat/lon and voila!
+    # T_all = xr.concat(T_list, 'time')
     if savepath is not None:
-        print('saving cold_point_era5.nc to {}'.format(savepath))
-        da.to_netcdf(savepath + 'cold_point_era5.nc')
-    return da
+        print('saving T.nc to {}'.format(savepath))
+        comp = dict(zlib=True, complevel=9)  # best compression
+        encoding = {var: comp for var in T.data_vars}
+        with ProgressBar():
+            T.to_netcdf(savepath + 'T.nc', 'w', encoding=encoding)
+    return T
     
