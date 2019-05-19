@@ -7,16 +7,6 @@ Created on Thu Apr 11 13:12:22 2019
 """
 
 
-def lat_mean(da, method='cos', dim='lat', copy_attrs=True):
-    import numpy as np
-    if method == 'cos':
-        weights = np.cos(np.deg2rad(da[dim].values))
-        da_mean = (weights * da).sum(dim) / sum(weights)
-    if copy_attrs:
-        da_mean.attrs = da.attrs
-    return da_mean
-
-
 def get_randel_corr(work_path):
     import numpy as np
     import xarray as xr
@@ -24,8 +14,8 @@ def get_randel_corr(work_path):
     import matplotlib.pyplot as plt
     import seaborn as sns
     import pandas as pd
-    swoosh = xr.open_dataset(work_path + 'swoosh_latpress-2.5deg.nc')
-    haloe = xr.open_dataset(work_path +
+    swoosh = xr.open_dataset(work_path / 'swoosh_latpress-2.5deg.nc')
+    haloe = xr.open_dataset(work_path /
                             'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
     haloe['time'] = swoosh.time
     haloe_names = [x for x in haloe.data_vars.keys()
@@ -39,13 +29,13 @@ def get_randel_corr(work_path):
     com_latmean_2M_lagged = com_latmean.shift(time=-2)
     com_latmean_2M_lagged.name = com_latmean.name + ' + 2M lag'
     haloe_latmean = (weights * haloe.haloeanomh2oq).sum('lat') / sum(weights)
-    era40 = xr.open_dataarray(work_path + 'ERA40_T_mm_eq.nc')
+    era40 = xr.open_dataarray(work_path / 'ERA40_T_mm_eq.nc')
     era40 = era40.sel(level=100)
     weights = np.cos(np.deg2rad(era40['lat'].values))
     era40_latmean = (weights * era40).sum('lat') / sum(weights)
     era40anom_latmean = aux.deseason_xr(era40_latmean)
     era40anom_latmean.name = 'era40_100hpa_anomalies'
-    era5 = xr.open_dataarray(work_path + 'ERA5_T_eq_all.nc')
+    era5 = xr.open_dataarray(work_path / 'ERA5_T_eq_all.nc')
     cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
                                                      'lon'])
     cold_point = aux.deseason_xr(cold_point)
@@ -55,7 +45,7 @@ def get_randel_corr(work_path):
     era5_latmean = (weights * era5).sum('lat') / sum(weights)
     era5anom_latmean = aux.deseason_xr(era5_latmean)
     era5anom_latmean.name = 'era5_100hpa_anomalies'
-    merra = xr.open_dataarray(work_path + 'T_regrided.nc')
+    merra = xr.open_dataarray(work_path / 'T_regrided.nc')
     merra['time'] = pd.date_range(start='1979', periods=merra.time.size, freq='MS')
     merra = merra.mean('lon').sel(lat=slice(-20, 20), level=100)
     weights = np.cos(np.deg2rad(merra['lat'].values))
@@ -81,8 +71,13 @@ def get_randel_corr(work_path):
     return
 
 
-def get_coldest_point(t_path, savepath=None):
+def proc_coldest_point(work_path):
     """create coldest point index by using era5 4xdaily data"""
+    import xarray as xr
+    from aux_functions_strat import lat_mean, deseason_xr
+    T_lat_lon_4Xdaily = xr.open_dataset(work_path / 'cold_point_era5.nc')
+    T_daily_zonal = T_lat_lon_4Xdaily.resample(time='1D').mean('time').mean('lon')
+    T_daily = lat_mean(T_daily_zonal)
     # 1)open mfdataset the temperature data
     # 2)selecting -15 to 15 lat, and maybe the three levels (125,100,85)
     # 2a) alternativly, find the 3 lowest temperature for each lat/lon in 
@@ -90,8 +85,5 @@ def get_coldest_point(t_path, savepath=None):
     # 3) run a quadratic fit to the three points coldest points and select
     # the minimum, put it in the lat/lon grid.
     # 4) resample to monthly means and average over lat/lon and voila!
-    if savepath is not None:
-        print('saving cold_point_era5.nc to {}'.format(savepath))
-        da.to_netcdf(savepath + 'cold_point_era5.nc')
     return da
     

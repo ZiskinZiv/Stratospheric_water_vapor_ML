@@ -543,7 +543,8 @@ def deseason_xr(data, how='std', month='all', season=None, clim=False, verbose=T
             xrr = data / data.std('time')
             comment = 'selected season ' + str(season) + ' and removed the time mean and divided by std'
     if verbose:
-        print(comment + ' on ' + field_name)
+        if field_name is not None:
+            print(comment + ' on ' + field_name)
     xrr.attrs = attrs
     xrr.attrs['comment'] = comment
     xrr.name = field_name
@@ -615,6 +616,16 @@ def remove_nan_xr(data, just_geo=True, verbose=False):
                 return data_copy
         aux.text_red('removing nans with dim labels failed...try something else...')
     return
+
+
+def lat_mean(da, method='cos', dim='lat', copy_attrs=True):
+    import numpy as np
+    if method == 'cos':
+        weights = np.cos(np.deg2rad(da[dim].values))
+        da_mean = (weights * da).sum(dim) / sum(weights)
+    if copy_attrs:
+        da_mean.attrs = da.attrs
+    return da_mean
 
 
 def desc_nan(data, verbose=True):
