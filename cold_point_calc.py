@@ -9,7 +9,7 @@ Created on Sat May 18 18:53:12 2019
 from pathlib import Path
 
 
-def get_coldest_point(t_path, filename='T_1.nc', savepath=None):
+def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None):
     """create coldest point index by using era5 4xdaily data"""
     import xarray as xr
     import numpy as np
@@ -77,5 +77,66 @@ def get_coldest_point(t_path, filename='T_1.nc', savepath=None):
         da.to_dataset(name='cold_point').to_netcdf(savepath / 'cold_point_era5.nc', 'w', encoding=encoding)
     print('Done!')
     return da
-# path = Path('/data11/ziskin/ERA5/')
-# da = get_coldest_point(path, 'T.nc', path)
+
+
+def get_coldest_point_merra2(t_path, savepath=None):
+    """create coldest point index by using MERRA2 4xdaily data"""
+    import xarray as xr
+    import numpy as np
+    import pandas as pd
+
+    def quad(y):
+        # note: apply always moves core dimensions to the end
+        [a, b, c] = np.polyfit([38, 39, 40], y, 2)
+        min_t = c - b**2 / (4 * a)
+        print(y.shape)
+        min_t = np.array([y[1, i] for i in np.arange(
+                y.shape[1]) if min_t[i] <= y[0, i] or min_t[i] >= y[2, i] or np.isinf(min_t[i])])
+        return min_t
+    da_list = []
+    years = np.arange(1980, 2019)
+    for year in years:
+        filename = 'MERRA2_T_cold_' + str(year) + '.nc'
+        print(filename)
+        T_s = xr.open_dataset(t_path / filename)
+        print('running year {}:'.format(year))
+        # T_s['T'] = T_s['T'].transpose('lev', 'time', 'lon', 'lat')
+        print('getting numpy array...')
+        NU = T_s['T'].values
+        NU = np.transpose(NU, axes=(1, 3, 2, 0))
+        NU = NU[1:4, :, :, :]
+        print('reshaping...')
+        NU_reshaped = NU.reshape(NU.shape[0], NU.shape[1] * NU.shape[2]
+                                 * NU.shape[3])
+        print('allocating new array...')
+        NU_result = np.empty((NU_reshaped.shape[1]))
+        print('running quad...')
+        NU_result = quad(NU_reshaped)
+        print('reshaping back...')
+        return NU_result
+        NU_result = NU_result.reshape(NU.shape[1], NU.shape[2], NU.shape[3])
+    #    # main loop:
+    #    for time, lon, lat in product(range(NU.shape[0]), range(NU.shape[1]),
+    #                                  range(NU.shape[2])):
+    #        NU_res[time, lon, lat] = quad(NU[time, lon, lat, :])
+        # put data in dataarray:
+        print('saving to dataarray...')
+        da = xr.DataArray(NU_result, dims=['time', 'lon', 'lat'])
+        da['time'] = T_s.time
+        da['lon'] = T_s.lon
+        da['lat'] = T_s.lat
+        da_list.append(da)
+    da = xr.concat(da_list, 'time')
+    if savepath is not None:
+        comp = dict(zlib=True, complevel=9)  # best compression
+        encoding = {
+            var: comp for var in da.to_dataset(
+                name='cold_point').data_vars}
+        print('saving cold_point_merra2.nc to {}'.format(savepath))
+        da.to_dataset(name='cold_point').to_netcdf(savepath
+                                                   / 'cold_point_merra2.nc',
+                                                   'w', encoding=encoding)
+    print('Done!')
+    
+# path = Path('/data11/ziskin/MERRA2/')
+# da = get_coldest_point_merra2(path, path)
