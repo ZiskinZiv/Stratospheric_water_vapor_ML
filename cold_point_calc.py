@@ -89,9 +89,13 @@ def get_coldest_point_merra2(t_path, savepath=None):
         # note: apply always moves core dimensions to the end
         [a, b, c] = np.polyfit([38, 39, 40], y, 2)
         min_t = c - b**2 / (4 * a)
-        print(y.shape)
-        min_t = np.array([y[1, i] for i in np.arange(
-                y.shape[1]) if min_t[i] <= y[0, i] or min_t[i] >= y[2, i] or np.isinf(min_t[i])])
+        for i in range(y.shape[1]):
+            if np.abs(a[i]) < 1e-7 or min_t[i] <= y[0,i] or min_t[i] >= y[2,i]:
+                min_t[i] = y[1,i]
+
+        # print(y.shape)
+        # min_t = np.array([y[1, i] for i in np.arange(
+        #         y.shape[1]) if min_t[i] <= y[0, i] or min_t[i] >= y[2, i] or np.isinf(min_t[i])])
         return min_t
     da_list = []
     years = np.arange(1980, 2019)
