@@ -107,7 +107,7 @@ def get_coldest_point_merra2(t_path, savepath=None):
         # T_s['T'] = T_s['T'].transpose('lev', 'time', 'lon', 'lat')
         print('getting numpy array...')
         NU = T_s['T'].values
-        NU = np.transpose(NU, axes=(1, 3, 2, 0))
+        NU = np.transpose(NU, axes=(1, 0, 3, 2))
         NU = NU[1:4, :, :, :]
         print('reshaping...')
         NU_reshaped = NU.reshape(NU.shape[0], NU.shape[1] * NU.shape[2]
@@ -117,7 +117,6 @@ def get_coldest_point_merra2(t_path, savepath=None):
         print('running quad...')
         NU_result = quad(NU_reshaped)
         print('reshaping back...')
-        return NU_result
         NU_result = NU_result.reshape(NU.shape[1], NU.shape[2], NU.shape[3])
     #    # main loop:
     #    for time, lon, lat in product(range(NU.shape[0]), range(NU.shape[1]),
@@ -141,6 +140,6 @@ def get_coldest_point_merra2(t_path, savepath=None):
                                                    / 'cold_point_merra2.nc',
                                                    'w', encoding=encoding)
     print('Done!')
-    
+    return da
 # path = Path('/data11/ziskin/MERRA2/')
 # da = get_coldest_point_merra2(path, path)
