@@ -12,12 +12,14 @@ from pathlib import Path
 #2)resample to MS and mean('time')
 #3)simple lat/lon mean
 #4)remove the long term monthly mean (without sub the std) 
-def compare_all(work_path):
+def compare_all(work_path, heatmap=True):
     """compare era5, merra2, swoosh cold point -15 to 15 lat to swoosh
     h2o anom 82 hPa"""
     import xarray as xr
     import pandas as pd
     from aux_functions_strat import deseason_xr
+    import seaborn as sns
+    import matplotlib.pyplot as plt
     # first load swoosh data:
     sw = xr.open_dataset(work_path /
                          'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
@@ -34,25 +36,36 @@ def compare_all(work_path):
     wv_82 = wv_82.sel(lat=slice(-15, 15))
     wv_82 = wv_82.mean('lat')
     wv_82['time'] = time
-    # merra2 just minimum:
-    merra2 = get_coldest_point_merra2(work_path / 'MERRA2/', just_minimum=True)
+    # merra2 just minimum and quad:
+    merra2 = xr.open_dataarray(work_path / 'cold_point_merra2_just_min.nc')
     anom_merra2 = deseason_xr(merra2, how='mean')
-    # era5 just minimum:
-    era5 = get_coldest_point_era5(
-        work_path, filename='T.nc', just_minimum=True)
-    anom_era5 = deseason_xr(era5.t, how='mean')
+    merra2 = xr.open_dataarray(work_path / 'cold_point_merra2_quad.nc')
+    anom_merra2_quad = deseason_xr(merra2, how='mean')
+    # era5 just minimum and quad:
+    era5 = xr.open_dataarray(work_path / 'cold_point_era5_just_min.nc')
+    anom_era5 = deseason_xr(era5, how='mean')
+    era5 = xr.open_dataarray(work_path / 'cold_point_era5_quad.nc')
+    anom_era5_quad = deseason_xr(era5, how='mean')
     # put everything into a dataset:
     ds = wv_82.to_dataset(name=wv_82.name)
     ds['sw_cpt'] = anom_cpt
     ds['merra2'] = anom_merra2
     ds['era5'] = anom_era5
+    ds['merra2_quad'] = anom_merra2_quad
+    ds['era5_quad'] = anom_era5_quad
     # 3 months rolling mean:
     ds['merra2_smooth'] = ds.merra2.rolling(time=3, center=True).mean()
     ds['era5_smooth'] = ds.era5.rolling(time=3, center=True).mean()
+    ds['merra2_quad_smooth'] = ds.merra2_quad.rolling(time=3, center=True).mean()
+    ds['era5_quad_smooth'] = ds.era5_quad.rolling(time=3, center=True).mean()
+    ds = ds.reset_coords(drop=True)
+    if heatmap:
+        sns.heatmap(ds.to_dataframe().corr(), annot=True)
+        plt.tight_layout()
     return ds
 
 
-def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None, just_minimum=False):
+def get_coldest_point_era5(t_path, filename='T.nc', savepath=None, just_minimum=False):
     """create coldest point index by using era5 4xdaily data"""
     import xarray as xr
     import numpy as np
@@ -76,7 +89,7 @@ def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None, just_minimu
     # the minimum, put it in the lat/lon grid.
     # 4) resample to monthly means and average over lat/lon and voila!
     if just_minimum:
-        print('opening big T file ~ 2.9GB compressed...')
+        print('opening big T file ~ 4.9GB compressed...')
         T = xr.open_dataset(t_path / filename)
         da_list = []
         years = np.arange(1980, 2019)
@@ -85,12 +98,12 @@ def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None, just_minimu
             print('running year {}:'.format(year))
             # T_s['T'] = T_s['T'].transpose('lev', 'time', 'lon', 'lat')
             T_s = T_s.min('level')
-            da = T_s.resample(time='MS').mean('time')
+            da = T_s['t'].resample(time='MS').mean('time')
             da = da.mean('lon')
             da = da.mean('lat')
             da_list.append(da)
     else:
-        print('opening big T file ~ 2.9GB compressed...')
+        print('opening big T file ~ 4.9GB compressed...')
         T = xr.open_dataset(t_path / filename)
         # T = T.sel(level=slice(70, 125))
         da_list = []
@@ -126,8 +139,12 @@ def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None, just_minimu
     if savepath is not None:
         comp = dict(zlib=True, complevel=9)  # best compression
         encoding = {var: comp for var in da.to_dataset(name='cold_point').data_vars}
-        print('saving cold_point_era5.nc to {}'.format(savepath))
-        da.to_dataset(name='cold_point').to_netcdf(savepath / 'cold_point_era5.nc', 'w', encoding=encoding)
+        filename = 'cold_point_era5_quad.nc'
+        if just_minimum:
+            filename = 'cold_point_era5_just_min.nc'
+        print('saving {} to {}'.format(filename, savepath))
+        da.to_dataset(name='cold_point').to_netcdf(savepath / filename,
+                                                   'w', encoding=encoding)
     print('Done!')
     return da
 
@@ -198,9 +215,11 @@ def get_coldest_point_merra2(t_path, savepath=None, just_minimum=False):
         encoding = {
             var: comp for var in da.to_dataset(
                 name='cold_point').data_vars}
-        print('saving cold_point_merra2.nc to {}'.format(savepath))
-        da.to_dataset(name='cold_point').to_netcdf(savepath
-                                                   / 'cold_point_merra2.nc',
+        filename = 'cold_point_merra2_quad.nc'
+        if just_minimum:
+            filename = 'cold_point_merra2_just_min.nc'
+        print('saving {} to {}'.format(filename, savepath))
+        da.to_dataset(name='cold_point').to_netcdf(savepath / filename,
                                                    'w', encoding=encoding)
     print('Done!')
     return da
