@@ -64,7 +64,7 @@ def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None, just_minimu
         min_t = c - b**2 / (4 * a)
         for i in range(y.shape[1]):
             if np.abs(a[i]) < 1e-7 or min_t[i] <= y[0,i] or min_t[i] >= y[2,i]:
-                min_t[i] = y[1,i]
+                min_t[i] = min(y[:, i])
 
         return min_t
 
@@ -100,9 +100,9 @@ def get_coldest_point_era5(t_path, filename='T_1.nc', savepath=None, just_minimu
             print('running year {}:'.format(year))
             # T_s['T'] = T_s['T'].transpose('lev', 'time', 'lon', 'lat')
             T_s['t'] = T_s.t.transpose('level', 'time', 'lon', 'lat')
-            T_s['t'] = T_s['t'].sel(level=slice(70, 125))
             print('getting numpy array...')
             NU = T_s.t.values
+            NU = NU[1:4, :, :, :]
             print('reshaping...')
             NU_reshaped = NU.reshape(NU.shape[0], NU.shape[1] * NU.shape[2] *
                                      NU.shape[3])
@@ -144,7 +144,7 @@ def get_coldest_point_merra2(t_path, savepath=None, just_minimum=False):
         min_t = c - b**2 / (4 * a)
         for i in range(y.shape[1]):
             if np.abs(a[i]) < 1e-7 or min_t[i] <= y[0,i] or min_t[i] >= y[2,i]:
-                min_t[i] = y[1,i]
+                min_t[i] = min(y[:,i])
 
         # print(y.shape)
         # min_t = np.array([y[1, i] for i in np.arange(
