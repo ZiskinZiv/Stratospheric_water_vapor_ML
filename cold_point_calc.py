@@ -11,7 +11,96 @@ from pathlib import Path
 #1)take the min of 'level' for 6hr temperature model level/pressure level data
 #2)resample to MS and mean('time')
 #3)simple lat/lon mean
-#4)remove the long term monthly mean (without sub the std) 
+#4)remove the long term monthly mean (without sub the std)
+
+
+
+def danni_test_for_cpt_wv_corr(work_path, heatmap=True):
+    """compare swoosh 82 hpa water vapor with merra2 cpt(also swoosh) with different longitudes"""
+    import xarray as xr
+    import pandas as pd
+    from aux_functions_strat import deseason_xr
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    # regress out the ch4 qbo and cpt, from wv then, whats left correlate with tropospheric aerosols(pollution)
+    sw = xr.open_dataset(work_path /
+                         'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-lonlatpress-20deg-5deg-L31.nc', decode_times=False)
+    time = pd.date_range('1984-01-01', freq='MS', periods=sw.time.size)
+    sw['time'] = time
+    sw_lat = xr.open_dataset(work_path /
+                         'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
+    time = pd.date_range('1984-01-01', freq='MS', periods=sw_lat.time.size)
+    sw_lat['time'] = time
+    # cold point tropopause:
+    cpt = sw['cptropt']
+    cpt_india = cpt.sel(lat=slice(20, 30), lon=slice(70, 90)).reset_coords(drop=True)
+    cpt_bengal = cpt.sel(lat=slice(5, 15), lon=90).reset_coords(drop=True)
+    cpt_india.name = cpt.name + '_india'
+    cpt_bengal.name = cpt.name + '_bengal'
+    cpt_india = cpt_india.mean('lon', keep_attrs=True)
+    cpt = cpt.sel(lat=slice(-15, 15))
+    # cpt = deseason_xr(cpt, how='mean')
+    cpt_mean = cpt.mean('lon', keep_attrs=True)
+    cpt_mean = cpt_mean.mean('lat', keep_attrs=True)
+    cpt_month_mean = cpt_mean.groupby('time.month').mean('time')
+    # xrr = data.groupby('time.month') - month_mean
+    # old pacific = -170 to -110
+    cpt_pacific = cpt.sel(lon=slice(-170, -150)).mean('lon', keep_attrs=True)
+    cpt_africa = cpt.sel(lon=slice(10, 50)).mean('lon', keep_attrs=True)
+    cpt_papua = cpt.sel(lon=slice(110, 150)).mean('lon', keep_attrs=True)
+    cpt_brazil = cpt.sel(lon=slice(-70, -50)).mean('lon', keep_attrs=True)
+    cpt_pacific.name = cpt.name + '_pacific'
+    cpt_africa.name = cpt.name + '_africa'
+    cpt_papua.name = cpt.name + '_papua'
+    cpt_brazil.name = cpt.name + '_brazil'
+    cpt_all = xr.merge([cpt_pacific, cpt_africa, cpt_papua, cpt_brazil, cpt_india, cpt_bengal])
+    cpt_all = cpt_all.mean('lat', keep_attrs=True)
+    for name, var in cpt_all.data_vars.items():
+        cpt_all['anom_' + name] = var.groupby('time.month') - cpt_month_mean
+    wv = sw['combinedanomh2oq']
+    wv_filled = sw_lat['combinedanomfillanomh2oq']
+    wv_82 = wv.sel(level=82, method='nearest')
+    wv_82 = wv_82.sel(lat=slice(-15, 15))
+    wv_82 = wv_82.reset_coords(drop=True)
+    wv_82_filled = wv_filled.sel(level=82, method='nearest')
+    wv_82_filled = wv_82_filled.sel(lat=slice(-15, 15))
+    wv_82_filled = wv_82_filled.reset_coords(drop=True)
+    wv_82_pacific = wv_82.sel(lon=slice(-170, -110)).mean('lon',
+                                                          keep_attrs=True)
+    wv_82_africa = wv_82.sel(lon=slice(10, 50)).mean('lon', keep_attrs=True)
+    wv_82_papua = wv_82.sel(lon=slice(110, 150)).mean('lon', keep_attrs=True)
+    wv_82_brazil = wv_82.sel(lon=slice(-70, -50)).mean('lon', keep_attrs=True)
+    wv_82_pacific.name = wv_82.name + '_pacific'
+    wv_82_africa.name = wv_82.name + '_africa'
+    wv_82_papua.name = wv_82.name + '_papua'
+    wv_82_brazil.name = wv_82.name + '_brazil'
+    wv_82_all = xr.merge([wv_82_pacific, wv_82_africa, wv_82_papua,
+                          wv_82_brazil])
+    wv_82 = wv_82.mean('lon', keep_attrs=True)
+    wv_82 = wv_82.mean('lat', keep_attrs=True)
+    wv_82_filled = wv_82_filled.mean('lat', keep_attrs=True)
+    wv_82_all = wv_82_all.mean('lat', keep_attrs=True)
+    cpt_anoms = [cpt_all[x] for x in cpt_all.data_vars.keys() if 'anom' in x]
+    # cpts = [cpt_all[x] for x in cpt_all.data_vars.keys()]
+    wv_anoms = [wv_82_all[x] for x in wv_82_all.data_vars.keys()]
+    wv_and_cpt = xr.merge(wv_anoms + cpt_anoms + [wv_82, wv_82_filled])
+    anoms = [x for x in wv_and_cpt.data_vars.keys() if 'cpt' in x]
+    # select summer times:
+    wv_and_cpt = wv_and_cpt.sel(time=wv_and_cpt['time.season'] == 'JJA')
+    wv_and_cpt = wv_and_cpt.reset_coords(drop=True)
+    df = wv_and_cpt[anoms + ['combinedanomh2oq']].to_dataframe()
+    if heatmap:
+        sns.heatmap(wv_and_cpt.to_dataframe().corr(), annot=True)
+        plt.tight_layout()
+    region = ['africa', 'pacific', 'papua', 'brazil']
+    fig, axes = plt.subplots(1, 4, sharey=True, figsize=(20, 5))
+    for i, ax in enumerate(axes):
+        df.plot(x='anom_cptropt_' + region[i], y='combinedanomh2oq',
+                kind='scatter', ax=ax)
+        ax.set_xlim(-5, 3)
+    return wv_and_cpt, df
+
+
 def compare_all(work_path, heatmap=True):
     """compare era5, merra2, swoosh cold point -15 to 15 lat to swoosh
     h2o anom 82 hPa"""
@@ -50,7 +139,9 @@ def compare_all(work_path, heatmap=True):
     ds = wv_82.to_dataset(name=wv_82.name)
     ds['sw_cpt'] = anom_cpt
     ds['merra2'] = anom_merra2
+    ds['merra2_2m'] = anom_merra2.shift(time=2)
     ds['era5'] = anom_era5
+    ds['era5_2m'] = anom_era5.shift(time=2)
     ds['merra2_quad'] = anom_merra2_quad
     ds['era5_quad'] = anom_era5_quad
     # 3 months rolling mean:
