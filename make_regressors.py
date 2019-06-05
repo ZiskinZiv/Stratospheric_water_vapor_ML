@@ -29,6 +29,8 @@ more analysis:
         need to change save and load routines to accomplish this.
 """
 
+work_chaim = work_chaim
+cwd = cwd
 
 def prepare_regressors(name='Regressors', plot=True, save=False,
                        rewrite_file=True, normalize=False, savepath=None):
@@ -49,7 +51,7 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
                      'olr': 'olr_index.nc',
                      'ch4': 'ch4_index.nc',
                      'wind': 'era5_wind_shear_index.nc',
-                     'cold': 'cold_point_index.nc'}
+                     'cold': 'cpt_index.nc'}
     if savepath is None:
         savepath = os.getcwd() + '/regressors/'
     # bdc:
@@ -179,27 +181,25 @@ def _produce_wind_shear(source='singapore', savepath=None):
     return wind_shear
 
 
-def _download_CH4(filename='ch4_mm.nc', trend=False, savepath=None):
+def _download_CH4(filename='ch4_mm.nc', load_path=cwd/'regressors/',
+                  trend=False, savepath=None):
     import xarray as xr
     import pandas as pd
     import ftputil
     import os.path
     import os
-    if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
-    path = savepath
-    if os.path.isfile(os.path.join(path, filename)):
+    if os.path.isfile(os.path.join(load_path, filename)):
         print('CH4 monthly means from NOAA ERSL already d/l and saved!')
         # read it to data array (xarray)
-        ch4_xr = xr.open_dataset(path + filename)
+        ch4_xr = xr.open_dataset(load_path / filename)
         # else d/l the file and fObsirst read it to df (pandas),
         # then to xarray then save as nc:
     else:
         filename_todl = 'ch4_mm_gl.txt'
         with ftputil.FTPHost('aftp.cmdl.noaa.gov', 'anonymous', '') as ftp_host:
             ftp_host.chdir('/products/trends/ch4/')
-            ftp_host.download(filename_todl, path + filename_todl)
-        ch4_df = pd.read_csv(path + filename_todl, delim_whitespace=True,
+            ftp_host.download(filename_todl, load_path.as_posix() + filename_todl)
+        ch4_df = pd.read_csv(load_path / filename_todl, delim_whitespace=True,
                              comment='#',
                              names=['year', 'month', 'decimal', 'average',
                                     'average_unc', 'trend', 'trend_unc'])
@@ -213,51 +213,70 @@ def _download_CH4(filename='ch4_mm.nc', trend=False, savepath=None):
         ch4_xr = xr.Dataset(ch4_df)
         ch4_xr.attrs['long_name'] = 'Monthly averages of CH4 concentrations'
         ch4_xr.attrs['units'] = 'ppb'
-        ch4_xr.to_netcdf(path + filename)
-        print('Downloaded CH4 monthly means data and saved it to: ' + filename)
+#    if savepath is not None:
+#        ch4_xr.to_netcdf(savepath / filename)
+#        print('Downloaded CH4 monthly means data and saved it to: ' + filename)
+#        return ch4_xr
     if trend:
         ch4 = ch4_xr.trend
-        ch4.to_netcdf(savepath + 'ch4_index.nc', 'w')
-        print('Saved trend ch4_index.nc to ' + savepath)
+        print('Saved trend ch4_index.nc to ' + str(savepath))
     else:
         ch4 = ch4_xr.average
-        ch4.to_netcdf(savepath + 'ch4_index.nc', 'w')
         print('Saved average ch4_index.nc to ' + savepath)
+    if savepath is not None:
+            ch4.to_netcdf(savepath / 'ch4_index.nc', 'w')
     return ch4
 
 
-def _produce_cold_point(savepath=None, lonslice=None):
+def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
     import xarray as xr
-    import sys
-    import os
-    # lonslice is a two-tuple : (minlon, maxlon)
-    if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
-    if sys.platform == 'linux':
-        work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
-    elif sys.platform == 'darwin':  # mac os
-        work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
-    era5 = xr.open_dataarray(work_path + 'ERA5_T_eq_all.nc')
-    if lonslice is None:
-        # cold_point = era5.sel(level=100).quantile(0.1, ['lat',
-        #                                                'lon'])
-        cold_point = era5.sel(level=100)
-        cold_point = cold_point.mean('lon')
-        cold_point = cold_point.mean('lat')
-        # cold_point = cold_point.rolling(time=3).mean()
-        
-        # cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
-        #                                                  'lon'])
-    else:
-        # cold_point = era5.sel(level=100).sel(lon=slice(*lonslice)).quantile(
-        #    0.1, ['lat', 'lon'])
-        cold_point = era5.sel(level=slice(150, 50)).sel(
-                lon=slice(*lonslice)).min(['level', 'lat', 'lon'])
-        cold_point.attrs['lon'] = lonslice
-    cold_point.name = 'cold'
-    cold_point.to_netcdf(savepath + 'cold_point_index.nc')
-    print('Saved cold_point_index.nc to ' + savepath)
-    return cold_point
+    import pandas as pd
+    sw = xr.open_dataset(load_path /
+                         'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
+    time = pd.date_range('1984-01-01', freq='MS', periods=sw.time.size)
+    sw['time'] = time
+    # cold point tropopause:
+    cpt = sw['cptropt']
+    cpt = cpt.sel(lat=slice(-15, 15))
+    cpt = cpt.mean('lat')
+    if savepath is not None:
+        cpt.to_netcdf(savepath / 'cpt_index.nc')
+        print('Saved cpt_index.nc to ' + str(savepath))
+    return cpt
+
+
+#def _produce_cold_point(savepath=None, lonslice=None):
+#    import xarray as xr
+#    import sys
+#    import os
+#    # lonslice is a two-tuple : (minlon, maxlon)
+#    if savepath is None:
+#        savepath = os.getcwd() + '/regressors/'
+#    if sys.platform == 'linux':
+#        work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
+#    elif sys.platform == 'darwin':  # mac os
+#        work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
+#    era5 = xr.open_dataarray(work_path + 'ERA5_T_eq_all.nc')
+#    if lonslice is None:
+#        # cold_point = era5.sel(level=100).quantile(0.1, ['lat',
+#        #                                                'lon'])
+#        cold_point = era5.sel(level=100)
+#        cold_point = cold_point.mean('lon')
+#        cold_point = cold_point.mean('lat')
+#        # cold_point = cold_point.rolling(time=3).mean()
+#        
+#        # cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
+#        #                                                  'lon'])
+#    else:
+#        # cold_point = era5.sel(level=100).sel(lon=slice(*lonslice)).quantile(
+#        #    0.1, ['lat', 'lon'])
+#        cold_point = era5.sel(level=slice(150, 50)).sel(
+#                lon=slice(*lonslice)).min(['level', 'lat', 'lon'])
+#        cold_point.attrs['lon'] = lonslice
+#    cold_point.name = 'cold'
+#    cold_point.to_netcdf(savepath + 'cold_point_index.nc')
+#    print('Saved cold_point_index.nc to ' + savepath)
+#    return cold_point
 
 
 def _produce_GHG(savepath=None):
