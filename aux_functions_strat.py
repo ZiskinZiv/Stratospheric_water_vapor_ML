@@ -101,7 +101,8 @@ def area_from_latlon_xr(ds, verbose=False):
     return ds
 
 
-def generic_regrid(datain, lats_in, lons_in, lats_out, lons_out, order, long_second=True):
+def generic_regrid(datain, lats_in, lons_in, lats_out, lons_out, order,
+                   long_second=True):
     """takes a geo gridded variable and regrids it to different grid"""
     # long_second is a flag that means the second dimension of datain is the longitude
     from mpl_toolkits import basemap
@@ -114,7 +115,8 @@ def generic_regrid(datain, lats_in, lons_in, lats_out, lons_out, order, long_sec
     data_tri = np.concatenate([data_in, data_in, data_in], axis=1)
     lats, lons = np.meshgrid(lats_out, lons_out)
     # regrided_data = basemap.interp(data_tri, lats_in, lons_tri, lats, lons, order=order)
-    regrided_data = basemap.interp(data_tri, lons_tri, lats_in, lons, lats, order=order).T
+    regrided_data = basemap.interp(data_tri, lons_tri, lats_in, lons, lats,
+                                   order=order).T
     return regrided_data
 
 
@@ -253,7 +255,6 @@ def xr_rename_sort(xarray, lon_roll=True, verbose=False):
     return xarray
 
 
-
 def prepare_reg_list(reg_list):
     """turn the regressors list detasets into a list of datattys with regressors dim"""
     import xarray as xr
@@ -261,7 +262,8 @@ def prepare_reg_list(reg_list):
     for reg in reg_list:
         # names = [x for x in reg.data_vars if x != reg.attrs['median']]
         # data_reg = [x for x in reg.data_vars.values() if x != reg.attrs['median']]
-        reg_dict = dict([(x, y) for x, y in reg.data_vars.items() if x != reg.attrs['median']])
+        reg_dict = dict([(x, y) for x, y in reg.data_vars.items()
+                        if x != reg.attrs['median']])
         con_data = xr.concat(reg_dict.values(), dim='regressors')
         con_data['regressors'] = list(reg_dict.keys())
         con_data.name = 'regressors_time_series'
@@ -458,7 +460,8 @@ def weighted_mean_decraped(xarray):
     return xr_w
 
 
-def deseason_xr(data, how='std', month='all', season=None, clim=False, verbose=True):
+def deseason_xr(data, how='std', month='all', season=None, clim=False,
+                verbose=True):
     """deseason data: 'mean'= remove long-term monthly mean
     'std'= remove long-term monthly mean and divide by long term monthly std
     month is selecting the spesific months, season is selecting the spesific seasons,
