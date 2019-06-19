@@ -177,10 +177,10 @@ def proccess_era5_fields(path, pre_names, post_name, mean=True, savepath=None):
     import xarray as xr
     import aux_functions_strat as aux
     import xesmf as xe
-    import os
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/'
-    xarray = xr.open_mfdataset(path + 'era5_' + pre_names + '_*.nc')
+        savepath = Path().cwd()
+    xarray = xr.open_mfdataset(str(path) + 'era5_' + pre_names + '_*.nc')
     name = [x for x in xarray.data_vars.keys()][0]
     xarray = xarray.to_array(name=name).squeeze(drop=True)
     xarray = aux.xr_rename_sort(xarray, lon_roll=False)
@@ -203,5 +203,5 @@ def proccess_era5_fields(path, pre_names, post_name, mean=True, savepath=None):
     encoding = {var: comp for var in da.to_dataset().data_vars}
     da.to_netcdf(savepath + 'era5_' + post_name + '.nc', 'w',
                  encoding=encoding)
-    print('saved ' + 'era5_' + post_name + '.nc' + ' to path:' + savepath)
+    print('saved ' + 'era5_' + post_name + '.nc' + ' to path:' + str(savepath))
     return da
