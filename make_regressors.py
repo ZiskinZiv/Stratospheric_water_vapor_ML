@@ -32,8 +32,15 @@ more analysis:
 work_chaim = work_chaim
 cwd = cwd
 
+
+def print_saved_file(name, path):
+    print(name + ' was saved to ' + str(path))
+    return
+
+
 def prepare_regressors(name='Regressors', plot=True, save=False,
-                       rewrite_file=True, normalize=False, savepath=None):
+                       rewrite_file=True, normalize=False, savepath=None,
+                       rolling=None):
     """get all the regressors and prepare them save to file.
     replaced prepare_regressors for MLR function"""
     import aux_functions_strat as aux
@@ -41,6 +48,7 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
     import seaborn as sns
     import matplotlib.pyplot as plt
     import os
+    from pathlib import Path
     # regressors names and filenames dict:
     reg_file_dict = {'bdc': 'era5_bdc_index.nc',
                      't500': 'era5_t500_index.nc',
@@ -53,14 +61,16 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
                      'wind': 'era5_wind_shear_index.nc',
                      'cold': 'cpt_index.nc'}
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     # bdc:
     bdc = load_regressor(reg_file_dict['bdc'], plot=False, deseason=True)
-    bdc = bdc.rolling(time=3).mean()
+    if rolling is not None:
+        bdc = bdc.rolling(time=3).mean()
     bdc.name = 'bdc'
     # t500
     t500 = load_regressor(reg_file_dict['t500'], plot=False, deseason=True)
-    t500 = t500.rolling(time=3).mean()
+    if rolling is not None:
+        t500 = t500.rolling(time=3).mean()
     t500.name = 't500'
     # ENSO
     enso = load_regressor(reg_file_dict['enso'], plot=False, deseason=False)
@@ -81,7 +91,8 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
     # ghg.name = 'ghg'
     # get cold point:
     cold = load_regressor(reg_file_dict['cold'], plot=False, deseason=True)
-    cold = cold.rolling(time=3).mean()
+    if rolling is not None:
+        cold = cold.rolling(time=3).mean()
     cold.name = 'cold'
     # get olr:
     olr = load_regressor(reg_file_dict['olr'], plot=False, deseason=True)
@@ -101,7 +112,7 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
     # fix vol and ch4
     ds['vol'] = ds['vol'].fillna(1.31)
     ds = ds.reset_coords(drop=True)
-    ds['ch4'] = ds['ch4'].fillna(0.019076 + 1.91089)
+    # ds['ch4'] = ds['ch4'].fillna(0.019076 + 1.91089)
 #    if poly is not None:
 #        da = ds.to_array(dim='regressors').dropna(dim='time').T
 #        da = poly_features(da, feature_dim='regressors', degree=poly,
@@ -117,12 +128,13 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
     if save:
         if rewrite_file:
             try:
-                os.remove(savepath + name + '.nc')
+                os.remove(str(savepath) + name + '.nc')
             except OSError as e:  # if failed, report it back to the user
                 print("Error: %s - %s." % (e.filename, e.strerror))
-            print('Updating ' + name + '.nc' + ' in ' + savepath)
-        ds.to_netcdf(savepath + name + '.nc')
-        print(name + ' was saved to ' + savepath)
+            print('Updating ' + name + '.nc' + ' in ' + str(savepath))
+        filename = name + '.nc'
+        ds.to_netcdf(savepath / filename)
+        print_saved_file(name, savepath)
     if plot:
         le = len(ds.data_vars)
         df = ds.to_dataframe()
@@ -141,16 +153,16 @@ def load_regressor(regressor_file, plot=True, deseason=True, normalize=False,
     """loads a regressor from regressors folder. you can deseason it,
     plot it, normalize it, etc..."""
     import xarray as xr
-    import os
+    from pathlib import Path
     if path is None:
-        path = os.getcwd() + '/regressors/'
+        path = Path().cwd() / 'regressors/'
     if is_dataset:
-        reg = xr.open_dataset(path + regressor_file)
+        reg = xr.open_dataset(path / regressor_file)
     else:
-        reg = xr.open_dataarray(path + regressor_file)
+        reg = xr.open_dataarray(path / regressor_file)
     if deseason:
         from aux_functions_strat import deseason_xr
-        reg = deseason_xr(reg)
+        reg = deseason_xr(reg, how='mean')
     if normalize:
         from aux_functions_strat import normalize_xr
         # normalize = remove mean and divide by std
@@ -164,42 +176,44 @@ def load_regressor(regressor_file, plot=True, deseason=True, normalize=False,
 
 
 def _produce_wind_shear(source='singapore', savepath=None):
-    import os
     import xarray as xr
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     if source == 'singapore':
         u = _download_singapore_qbo(path=savepath)
         filename = 'singapore_wind_shear_index.nc'
     elif source == 'era5':
-        u = xr.open_dataarray(savepath + 'ERA5_U_eq_mean.nc')
+        u = xr.open_dataarray(savepath / 'ERA5_U_eq_mean.nc')
         filename = 'era5_wind_shear_index.nc'
     wind_shear = u.diff('level').sel(level=70)
     wind_shear.name = 'wind_shear'
-    wind_shear.to_netcdf(savepath + filename)
-    print('Saved ' + filename + ' to ' + savepath)
+    wind_shear.to_netcdf(savepath / filename)
+    print_saved_file(filename, savepath)
     return wind_shear
 
 
-def _download_CH4(filename='ch4_mm.nc', load_path=cwd/'regressors/',
+def _download_CH4(filename='ch4_mm.nc', loadpath=None,
                   trend=False, savepath=None):
     import xarray as xr
     import pandas as pd
     import ftputil
-    import os.path
-    import os
-    if os.path.isfile(os.path.join(load_path, filename)):
+    from pathlib import Path
+    if loadpath is None:
+        loadpath = Path().cwd() / 'regressors/'
+    filepath = loadpath / filename
+    if filepath.is_file():
         print('CH4 monthly means from NOAA ERSL already d/l and saved!')
         # read it to data array (xarray)
-        ch4_xr = xr.open_dataset(load_path / filename)
+        ch4_xr = xr.open_dataset(loadpath / filename)
         # else d/l the file and fObsirst read it to df (pandas),
         # then to xarray then save as nc:
     else:
         filename_todl = 'ch4_mm_gl.txt'
         with ftputil.FTPHost('aftp.cmdl.noaa.gov', 'anonymous', '') as ftp_host:
             ftp_host.chdir('/products/trends/ch4/')
-            ftp_host.download(filename_todl, load_path.as_posix() + filename_todl)
-        ch4_df = pd.read_csv(load_path / filename_todl, delim_whitespace=True,
+            ftp_host.download(filename_todl, loadpath.as_posix() + filename_todl)
+        ch4_df = pd.read_csv(loadpath / filename_todl, delim_whitespace=True,
                              comment='#',
                              names=['year', 'month', 'decimal', 'average',
                                     'average_unc', 'trend', 'trend_unc'])
@@ -219,12 +233,12 @@ def _download_CH4(filename='ch4_mm.nc', load_path=cwd/'regressors/',
 #        return ch4_xr
     if trend:
         ch4 = ch4_xr.trend
-        print('Saved trend ch4_index.nc to ' + str(savepath))
+        print_saved_file('trend ch4_index.nc', savepath)
     else:
         ch4 = ch4_xr.average
-        print('Saved average ch4_index.nc to ' + savepath)
+        print_saved_file('ch4_index.nc', savepath)
     if savepath is not None:
-            ch4.to_netcdf(savepath / 'ch4_index.nc', 'w')
+        ch4.to_netcdf(savepath / 'ch4_index.nc', 'w')
     return ch4
 
 
@@ -241,7 +255,7 @@ def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
     cpt = cpt.mean('lat')
     if savepath is not None:
         cpt.to_netcdf(savepath / 'cpt_index.nc')
-        print('Saved cpt_index.nc to ' + str(savepath))
+        print_saved_file('cpt_index.nc', savepath)
     return cpt
 
 
@@ -280,14 +294,14 @@ def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
 
 
 def _produce_GHG(savepath=None):
-    import os
     import xarray as xr
     import numpy as np
     import pandas as pd
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     path = savepath
-    aggi = pd.read_csv(path + 'AGGI_Table.csv', index_col='Year', header=2)
+    aggi = pd.read_csv(path / 'AGGI_Table.csv', index_col='Year', header=2)
     aggi = aggi[:-3]
     ghg = aggi.loc[:, '1990 = 1']
     ghg.name = 'GHG-RF'
@@ -310,20 +324,20 @@ def _produce_GHG(savepath=None):
     df.loc[nans_x] = Y
     df.index = di
     ghg = xr.DataArray(np.squeeze(df), dims='time')
-    ghg.to_netcdf(savepath + 'ghg_index.nc')
-    print('Saved ghg_index.nc to ' + savepath)
+    ghg.to_netcdf(savepath / 'ghg_index.nc')
+    print_saved_file('ghg_index.nc', savepath)
     return ghg
 
 
 def _produce_OLR(savepath=None):
-    import os
     import xarray as xr
     import numpy as np
     import pandas as pd
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     path = savepath
-    olr = xr.open_dataset(path + 'olr-monthly_v02r07_197901_201901.nc',
+    olr = xr.open_dataset(path / 'olr-monthly_v02r07_197901_201901.nc',
                           decode_times=False)
     olr['time'] = pd.date_range('1979-01-01', '2019-01-01', freq='MS')
     olr = olr.mean('lon', keep_attrs=True)
@@ -333,27 +347,22 @@ def _produce_OLR(savepath=None):
         olr.cos_lat.sum('lat', keep_attrs=True)
     olr_da = olr.olr_mean
     olr_da.attrs = olr.olr.attrs
-    olr_da.to_netcdf(savepath + 'olr_index.nc')
-    print('Saved olr_index.nc to ' + savepath)
+    olr_da.to_netcdf(savepath / 'olr_index.nc')
+    print_saved_file('olr_index.nc', savepath)
     return olr_da
 
 
-def _produce_T500_from_era5(savepath=None):
+def _produce_T500_from_era5(loadpath, savepath=None):
     """takes a 500 hpa [16 index on level var] from merra gcm temperature and
     slices -20 to 20 deg lat saves it to file. retures 4 time-series for each
     weighted means sel"""
     # import os
     import xarray as xr
     import numpy as np
-    import os
-    import sys
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
-    if sys.platform == 'linux':
-        work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
-    elif sys.platform == 'darwin':  # mac os
-        work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
-    t500 = xr.open_dataarray(work_path + 'ERA5_T_eq_all.nc')
+        savepath = Path().cwd() / 'regressors/'
+    t500 = xr.open_dataarray(loadpath / 'ERA5_T_eq_all.nc')
     t500 = t500.to_dataset(name='t500')
     t500 = t500.mean('lon')
     t500 = t500.sel(level=500)
@@ -361,22 +370,21 @@ def _produce_T500_from_era5(savepath=None):
     t500['mean'] = ((t500.cos_lat * t500.t500).sum('lat', keep_attrs=True) /
                     (t500.cos_lat.sum('lat', keep_attrs=True)))
     T500 = t500['mean']
-    T500.to_netcdf(savepath + 'era5_t500_index.nc')
-    print('Saved era5_t500_index.nc to ' + savepath)
+    T500.to_netcdf(savepath / 'era5_t500_index.nc')
+    print_saved_file('era5_t500_index.nc', savepath)
     return T500
 
 
-def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', levels=(100, 10),
-                     plot=True, savepath=None):
-    import os
+def _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='singapore',
+                     levels=(100, 10), plot=True, savepath=None):
     import xarray as xr
     import aux_functions_strat as aux
     from eofs.xarray import Eof
     import matplotlib.pyplot as plt
     import numpy as np
-    import sys
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     path = savepath
     # load and order data dims for eofs:
     if source == 'singapore':
@@ -387,16 +395,12 @@ def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', levels=(100, 10),
         U = U.dropna(dim='time')
         filename = 'singapore_qbo_index.nc'
     elif source == 'era5':
-        U = xr.open_dataarray(path + 'ERA5_U_eq_mean.nc')
+        U = xr.open_dataarray(path / 'ERA5_U_eq_mean.nc')
         U = U.sel(level=slice(100, 10))
         # U = U.sel(time=slice('1987', '2018'))
         filename = 'era5_qbo_index.nc'
     elif source == 'swoosh':
-        if sys.platform == 'linux':
-            work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
-        elif sys.platform == 'darwin':  # mac os
-            work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
-        U = xr.open_dataset(work_path + 'swoosh_latpress-2.5deg.nc')
+        U = xr.open_dataset(loadpath / 'swoosh_latpress-2.5deg.nc')
         U = U['combinedanomfillanomh2oq']
         U = U.sel(lat=slice(-20, 20), level=slice(*levels))
         U = aux.xr_weighted_mean(U)
@@ -416,8 +420,8 @@ def _produce_eof_pcs(npcs=2, name='qbo', source='singapore', levels=(100, 10),
     if source == 'era5':
         qbo_ds = -qbo_ds
     qbo_ds = qbo_ds.reset_coords(drop=True)
-    qbo_ds.to_netcdf(savepath + filename, 'w')
-    print('Saved ' + filename + ' to ' + savepath)
+    qbo_ds.to_netcdf(savepath / filename, 'w')
+    print_saved_file(filename, savepath)
     if plot:
         plt.close('all')
         plt.figure(figsize=(8, 6))
@@ -470,17 +474,17 @@ def _download_solar_10p7cm_flux(filename='solar_10p7cm.nc', savepath=None,
     """download the solar flux from Dominion Radio astrophysical Observatory
     Canada"""
     import ftputil
-    import os.path
     import pandas as pd
     import xarray as xr
-    import os
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     path = savepath
-    if os.path.isfile(os.path.join(path, filename)):
+    filepath = path / filename
+    if filepath.is_file():
         print('Solar flux 10.7cm from DRAO Canada already d/l and saved!')
         # read it to data array (xarray)
-        solar_xr = xr.open_dataset(path + filename)
+        solar_xr = xr.open_dataset(path / filename)
         # else d/l the file and fObsirst read it to df (pandas),
         # then to xarray then save as nc:
     else:
@@ -488,7 +492,7 @@ def _download_solar_10p7cm_flux(filename='solar_10p7cm.nc', savepath=None,
         with ftputil.FTPHost('ftp.geolab.nrcan.gc.ca', 'anonymous', '') as ftp_host:
             ftp_host.chdir('/data/solar_flux/monthly_averages/')
             ftp_host.download(filename_todl, path + filename_todl)
-        solar_df = pd.read_csv(path + filename_todl, delim_whitespace=True,
+        solar_df = pd.read_csv(path / filename_todl, delim_whitespace=True,
                                skiprows=1)
         print('Downloading solar flux 10.7cm from DRAO Canada website...')
         idx = pd.to_datetime(dict(year=solar_df.Year, month=solar_df.Mon,
@@ -498,41 +502,38 @@ def _download_solar_10p7cm_flux(filename='solar_10p7cm.nc', savepath=None,
         solar_df = solar_df.rename_axis('time')
         solar_xr = xr.Dataset(solar_df)
         solar_xr.attrs['long_name'] = 'Monthly averages of Solar 10.7 cm flux'
-        solar_xr.to_netcdf(path + filename)
+        solar_xr.to_netcdf(path / filename)
         print('Downloaded solar flux 10.7cm data and saved it to: ' + filename)
     if index:
         solar = solar_xr.Adjflux
         solar.attrs['long_name'] = 'Solar Adjflux 10.7cm'
-        solar.to_netcdf(savepath + 'solar_10p7cm_index.nc')
-        print('Saved solar_10p7cm_index.nc to ' + savepath)
+        solar.to_netcdf(savepath / 'solar_10p7cm_index.nc')
+        print_saved_file('solar_10p7cm_index.nc', savepath)
         return solar
     else:
         return solar_xr
 
 
-def _produce_strato_aerosol(savepath=None, index=False,
+def _produce_strato_aerosol(loadpath, savepath=None, index=False,
                             filename='multiple_input4MIPs_aerosolProperties_CMIP_IACETH-SAGE3lambda-3-0-0_gn_185001_201412.nc'):
     import os.path
-    import sys
     import xarray as xr
     import numpy as np
     import pandas as pd
+    from pathlib import Path
     from datetime import date, timedelta
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
-    if sys.platform == 'linux':
-        work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
-    elif sys.platform == 'darwin':  # mac os
-        work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
-    if os.path.isfile(os.path.join(work_path, filename)):
-        aerosol_xr = xr.open_dataset(work_path + filename, decode_times=False)
+        savepath = Path().cwd() / 'regressors/'
+    filepath = loadpath / filename
+    if filepath.is_file():
+        aerosol_xr = xr.open_dataset(loadpath / filename, decode_times=False)
         start_date = date(1850, 1, 1)
         days_from = aerosol_xr.time.values.astype('O')
         offset = np.empty(len(days_from), dtype='O')
         for i in range(len(days_from)):
             offset[i] = (start_date + timedelta(days_from[i])).strftime('%Y-%m')
         aerosol_xr['time'] = pd.to_datetime(offset)
-        print('Importing ' + work_path + filename + ' to Xarray')
+        print('Importing ' + str(loadpath) + filename + ' to Xarray')
     else:
         print('File not found...')
         return
@@ -542,8 +543,8 @@ def _produce_strato_aerosol(savepath=None, index=False,
         vol = vol.rename({'latitude': 'lat'})
         vol = xr_weighted_mean(vol.sel(lat=slice(-20, 20)))
         vol.attrs['long_name'] = 'Stratoapheric aerosol density'
-        vol.to_netcdf(savepath + 'vol_index.nc')
-        print('Saved vol_index.nc to ' + savepath)
+        vol.to_netcdf(savepath / 'vol_index.nc')
+        print_saved_file('vol_index.nc', savepath)
         return vol
     else:
         return aerosol_xr
@@ -588,13 +589,14 @@ def _download_enso_ersst(filename='noaa_ersst_nino.nc', index=False,
     import io
     import pandas as pd
     import xarray as xr
-    import os
+    from pathlib import Path
     if path is None:
-        path = os.getcwd() + '/regressors/'
-    if os.path.isfile(os.path.join(path, filename)):
+        path = Path().cwd() / 'regressors/'
+    filepath = path / filename
+    if filepath.is_file():
         print('Noaa Ersst El-Nino SO already d/l and saved!')
         # read it to data array (xarray)
-        nino_xr = xr.open_dataset(path + filename)
+        nino_xr = xr.open_dataset(path / filename)
         # else d/l the file and first read it to df (pandas),
         # then to xarray then save as nc:
     else:
@@ -610,13 +612,13 @@ def _download_enso_ersst(filename='noaa_ersst_nino.nc', index=False,
                            'NINO4', 'ANOM_NINO4', 'NINO3.4', 'ANOM_NINO3.4']
         nino_df = nino_df.rename_axis('time')
         nino_xr = xr.Dataset(nino_df)
-        nino_xr.to_netcdf(path + filename)
+        nino_xr.to_netcdf(path / filename)
         print('Downloaded ersst_nino data and saved it to: ' + filename)
     if index:
         enso = nino_xr['ANOM_NINO3.4']
         enso.attrs['long_name'] = enso.name
-        enso.to_netcdf(path + 'anom_nino3p4_index.nc', 'w')
-        print('Saved anom_nino3p4_index.nc to ' + path)
+        enso.to_netcdf(path / 'anom_nino3p4_index.nc', 'w')
+        print_saved_file('anom_nino3p4_index.nc', path)
         return enso
     else:
         return nino_xr
@@ -699,15 +701,17 @@ def _download_singapore_qbo(path=None, filename='singapore_qbo.nc'):
     import pandas as pd
     import xarray as xr
     import functools
+    from pathlib import Path
     """checks the files for the singapore qbo index from Berlin Uni. and
     reads them or downloads them if they are
     missing. output is the xarray and csv backup locally"""
     if path is None:
-        path = os.getcwd() + '/regressors/'
-    if os.path.isfile(os.path.join(path, filename)):
+        path = Path().cwd() / 'regressors/'
+    filepath = path / filename
+    if filepath.is_file():
         print('singapore QBO already d/l and saved!')
         # read it to data array (xarray)
-        sqbo_xr = xr.open_dataarray(path + filename)
+        sqbo_xr = xr.open_dataarray(path / filename)
         # else d/l the file and first read it to df (pandas),
         # then to xarray then save as nc:
     else:
@@ -762,22 +766,17 @@ def _download_singapore_qbo(path=None, filename='singapore_qbo.nc'):
                          ' at Singapore (48698), 1N/104E',
                          'units': 'm/s'}
         sqbo_xr.name = 'Singapore QBO'
-        sqbo_xr.to_netcdf(path + filename)
+        sqbo_xr.to_netcdf(path / filename)
         print('Downloaded singapore qbo data and saved it to: ' + filename)
     return sqbo_xr
 
 
-def _produce_BDC(savepath=None):
-    import os
-    import sys
+def _produce_BDC(loadpath, savepath=None):
     from era5_tools import proccess_era5_fields
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
-    if sys.platform == 'linux':
-        work_path = '/home/shlomi/Desktop/DATA/Work Files/Chaim_Stratosphere_Data/'
-    elif sys.platform == 'darwin':  # mac os
-        work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
-    bdc = proccess_era5_fields(path=work_path, pre_names='MTTPM_54',
+        savepath = Path().cwd() / 'regressors/'
+    bdc = proccess_era5_fields(path=loadpath, pre_names='MTTPM_54',
                                post_name='bdc_index', mean=True,
                                savepath=savepath)
     return bdc
@@ -806,23 +805,23 @@ def _produce_BDC(savepath=None):
 #    return
 
 
-def _make_nc_files_run_once(savepath=None):
-    import os
+def _make_nc_files_run_once(loadpath=work_chaim, savepath=None):
+    from pathlib import Path
     if savepath is None:
-        savepath = os.getcwd() + '/regressors/'
+        savepath = Path().cwd() / 'regressors/'
     _ = _download_enso_ersst(index=True, path=savepath)
-    _ = _produce_strato_aerosol(savepath=savepath, index=True)
+    _ = _produce_strato_aerosol(loadpath, savepath=savepath, index=True)
     _ = _download_solar_10p7cm_flux(savepath=savepath, index=True)
-    _ = _produce_eof_pcs(npcs=2, name='qbo', source='singapore', plot=False,
-                         savepath=savepath)
-    _ = _produce_eof_pcs(npcs=2, name='qbo', source='era5', plot=False,
-                         savepath=savepath)
-    _ = _produce_T500_from_era5(savepath=savepath)
+    _ = _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='singapore',
+                         plot=False, savepath=savepath)
+    _ = _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='era5',
+                         plot=False, savepath=savepath)
+    _ = _produce_T500_from_era5(loadpath, savepath=savepath)
     _ = _download_CH4(trend=True, savepath=savepath)
     _ = _produce_OLR(savepath=savepath)
     _ = _produce_GHG(savepath=savepath)
     _ = _produce_wind_shear(source='singapore', savepath=savepath)
     _ = _produce_wind_shear(source='era5', savepath=savepath)
-    _ = _produce_cold_point(savepath=savepath)
-    _ = _produce_BDC(savepath=savepath)
+    _ = _produce_cpt_swoosh(savepath=savepath)
+    # _ = _produce_BDC(loadpath, savepath=savepath)
     return
