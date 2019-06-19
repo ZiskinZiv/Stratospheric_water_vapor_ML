@@ -187,7 +187,6 @@ class ML_Switcher(object):
 
 
 
-
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=None, cv=None,
@@ -580,11 +579,15 @@ def pre_proccess(params):
     # if i want to add or substract regressor:
     if reg_add_sub is not None:
         if 'add' in reg_add_sub.keys():
-            regs_to_add = reg_add_sub['add']
-            reg_select = list(set(reg_select + regs_to_add))
+            to_add = reg_add_sub['add']
+            if isinstance(to_add, str):
+                to_add = [to_add]
+            reg_select = list(set(reg_select + to_add))
         if 'sub' in reg_add_sub.keys():
-            regs_to_sub = reg_add_sub['sub']
-            reg_select = list(set(reg_select).difference(set(regs_to_sub)))
+            to_sub = reg_add_sub['add']
+            if isinstance(to_sub, str):
+                to_sub = [to_sub]
+            reg_select = list(set(reg_select).difference(set(to_sub)))
 #        # make sure that reg_add_sub is 2-tuple and consist or str:
 #        if (isinstance(reg_add_sub, tuple) and
 #                len(reg_add_sub) == 2):
@@ -867,7 +870,7 @@ class ImprovedRegressor(RegressorWrapper):
         self.X_ = X
         return
 
-    def plot_like(self, field, div=False, robust=False, vmax=None, vmin=None):
+    def plot_like(self, field, **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
         from matplotlib.ticker import ScalarFormatter
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
@@ -878,10 +881,11 @@ class ImprovedRegressor(RegressorWrapper):
         rds = self.results_
         if field not in rds.data_vars:
             raise KeyError('No ' + str(field) + ' in results_!')
-        if div:
-            cmap = 'bwr'
-        else:
-            cmap = 'viridis'
+        # if 'div' in keys:
+        #     cmap = 'bwr'
+        # else:
+        #     cmap = 'viridis'
+        plt_kwargs = {'yscale': 'log', 'yincrease': False, 'cmap': 'bwr'}
         if field in rds.attrs['sample_types']:
             orig = aux.xr_weighted_mean(rds['original'])
             try:
@@ -897,10 +901,10 @@ class ImprovedRegressor(RegressorWrapper):
             orig = orig.reindex({'time': pd.date_range(orig.time[0].values,
                                                        orig.time[-1].values,
                                                        freq='MS')})
-            con = orig.T.plot.contourf(ax=axes[0], yscale='log',
-                                       yincrease=False,
-                                       center=0.0, levels=41, vmax=cmap_max,
-                                       cmap='bwr')
+            plt_sample = {**plt_kwargs}
+            plt_sample.update({'center': 0.0, 'levels': 41, 'vmax': cmap_max})
+            plt_sample.update(kwargs)
+            con = orig.T.plot.contourf(ax=axes[0], **plt_sample)
             cb = con.colorbar
             cb.set_label(orig.attrs['units'], fontsize=10)
             ax = axes[0]
@@ -910,14 +914,9 @@ class ImprovedRegressor(RegressorWrapper):
             times = times.reindex({'time': pd.date_range(times.time[0].values,
                                                          times.time[-1].values,
                                                          freq='MS')})
-            con = times.T.plot.contourf(ax=axes[1], yscale='log',
-                                        yincrease=False,
-                                        cmap='bwr',
-                                        center=0.0,
-                                        levels=41,
-                                        vmax=cmap_max,
-                                        extend='both',
-                                        robust=robust)
+            plt_sample.update({'extend': 'both'})
+            con = times.T.plot.contourf(ax=axes[1], **plt_sample) #,
+                                        # robust=robust)
             cb = con.colorbar
             try:
                 cb.set_label(times.attrs['units'], fontsize=10)
@@ -933,13 +932,18 @@ class ImprovedRegressor(RegressorWrapper):
         elif field in rds.attrs['error_types']:
             # TODO: add contour lines
             suptitle = rds[field].name
+            plt_error = {**plt_kwargs}
+            plt_error.update({'cmap': 'viridis', 'add_colorbar': True,
+                             'figsize': (6, 8)})
+            plt_error.update(kwargs)
             try:
-                con = rds[field].plot.contourf(yscale='log', yincrease=False,
-                                               add_colorbar=True,
-                                               cmap=cmap, levels=41,
-                                               figsize=(6, 8),
-                                               robust=robust, vmax=vmax,
-                                               vmin=vmin)
+#                con = rds[field].plot.contourf(yscale='log', yincrease=False,
+#                                               add_colorbar=True,
+#                                               cmap=cmap, levels=41,
+#                                               figsize=(6, 8),
+#                                               robust=robust, vmax=vmax,
+#                                               vmin=vmin)
+                con = rds[field].plot.contourf(**plt_error)
                 ax = plt.gca()
                 ax.yaxis.set_major_formatter(ScalarFormatter())
                 plt.suptitle(suptitle, fontsize=12, fontweight=750)
@@ -967,30 +971,24 @@ class ImprovedRegressor(RegressorWrapper):
             else:
                 colwrap = None
             suptitle = rds[field].name
+            plt_feature = {**plt_kwargs}
+            plt_feature.update({'add_colorbar': False, 'levels': 41,
+                                'fig_size': (15, 4),
+                                'extend': 'min', 'col_wrap': colwrap})
+            plt_feature.update(kwargs)
             try:
                 if rds[field].name == 'pvalues':
+                    plt_feature.update({'colors': con_colors,
+                                        'levels': con_levels, 'extend':'min'})
+                    plt_feature.update(kwargs)
                     fg = rds[field].sel({fdim: flist}).plot.contourf(col=fdim,
-                                                                     yscale='log',
-                                                                     yincrease=False,
-                                                                     add_colorbar=False,
-                                                                     colors=con_colors,
-                                                                     levels=con_levels,
-                                                                     figsize=(15, 4),
-                                                                     robust=robust,
-                                                                     extend='min',
-                                                                     col_wrap=colwrap)
+                                                                     **plt_feature) # robust=robust
                 else:
+                    plt_feature.update({'cmap': 'bwr',
+                                        'vmax': rds[field].max()})
+                    plt_feature.update(kwargs)
                     fg = rds[field].sel({fdim: flist}).plot.contourf(col=fdim,
-                                                                     yscale='log',
-                                                                     yincrease=False,
-                                                                     add_colorbar=False,
-                                                                     cmap=cmap,
-                                                                     levels=41,
-                                                                     figsize=(15, 4),
-                                                                     robust=robust,
-                                                                     vmax=rds[field].max(
-                                                                     ),
-                                                                     col_wrap=colwrap)
+                                                                     **plt_feature)
                 ax = plt.gca()
                 ax.yaxis.set_major_formatter(ScalarFormatter())
                 fg.fig.subplots_adjust(bottom=0.3, top=0.85, left=0.05)
