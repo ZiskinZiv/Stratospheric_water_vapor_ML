@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Mar 10 13:20:30 2019
-1) run LR with qbo_1 and qbo_2 and ch4, do validation test hold one out
-2) multioutput to gett cross_val_scores on cv=10 or cv=400
-2) send the figs to Shawn davis, ask about 1984-1987
+
 @author: shlomi
 """
+# TODO: build GridSearchCV support directley like ultioutput regressors
+# for various models
 from sklearn_xarray import RegressorWrapper
 
 
@@ -83,14 +83,14 @@ class parameters:
             data = xr.open_dataset(self.work_path + self.original_data_file)
         return data
 
-    def select_model(self, model_name=None, ml_params=None):
+    def select_model(self, model_name=None, ml_params=None, gridsearch=False):
         # pick ml model from ML_models class dict:
         ml = ML_Switcher()
         if model_name is not None:
-            ml_model = ml.pick_model(model_name)
+            ml_model = ml.pick_model(model_name, gridsearch)
             self.model_name = model_name
         else:
-            ml_model = ml.pick_model(self.model_name)
+            ml_model = ml.pick_model(self.model_name, gridsearch)
         # set external parameters if i want:
         if ml_params is not None:
             ml_model.set_params(**ml_params)
@@ -98,17 +98,27 @@ class parameters:
 
 
 class ML_Switcher(object):
-    def pick_model(self, model_name):
+    def pick_model(self, model_name, gridsearch=False):
         """Dispatch method"""
+        from sklearn.model_selection import GridSearchCV
+        self.param_grid = None
         method_name = str(model_name)
         # Get the method from 'self'. Default to a lambda.
         method = getattr(self, method_name, lambda: "Invalid ML Model")
-        # Call the method as we return it
-        return method()
+        if gridsearch:
+            return(GridSearchCV(method(), self.param_grid, n_jobs=-1,
+                                return_train_score=True))
+        else:
+            # Call the method as we return it
+            return method()
 
     def LR(self):
         from sklearn.linear_model import LinearRegression
         return LinearRegression(n_jobs=-1, copy_X=True)
+
+    def RANSAC(self):
+        from sklearn.linear_model import RANSACRegressor
+        return RANSACRegressor(random_state=42)
 
     def GPSR(self):
         from gplearn.genetic import SymbolicRegressor
@@ -132,7 +142,10 @@ class ML_Switcher(object):
 
     def KRR(self):
         from sklearn.kernel_ridge import KernelRidge
-        return KernelRidge(kernel='poly', degree=2)
+        import numpy as np
+        self.param_grid = {'gamma': np.logspace(-5, 1, 100),
+                           'alpha': np.logspace(-5, 2, 400)}
+        return KernelRidge(kernel='poly', degree=3)
 
     def GPR(self):
         from sklearn.gaussian_process import GaussianProcessRegressor
@@ -186,12 +199,11 @@ class ML_Switcher(object):
 #        return self.model
 
 
-
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=None, cv=None,
            regressors=['qbo_1', 'qbo_2', 'ch4'], reg_add_sub=None,
-           time_shift=None, special_run=None):
+           time_shift=None, special_run=None, gridsearch=False):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -226,12 +238,12 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #        return cv
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
-    keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv']
+    keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = parameters(**arg_dict)
     # p.from_dict(arg_dict)
     # select model:
-    ml_model = p.select_model(model_name, ml_params)
+    ml_model = p.select_model(model_name, ml_params, gridsearch)
     # pre proccess:
     X, y = pre_proccess(p)
     # unpack regressors:
@@ -350,15 +362,16 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             from sklearn.model_selection import cross_validate
             cv = parse_cv(cv)
             # get multi-target dim:
-            mt_dim = [x for x in y.dims if x != 'time'][0]
+            mt_dim = [x for x in y.dims if x != model.sample_dim][0]
             mul = (MultiOutputRegressor(model.estimator))
             print(mul)
             mul.fit(X, y)
             cv_results = [cross_validate(mul.estimators_[i], X,
                                          y.isel({mt_dim: i}),
-                                         cv=cv, scoring='r2') for i in
+                                         cv=cv, scoring='r2',
+                                         return_train_score=True) for i in
                           range(len(mul.estimators_))]
-            cds = proccess_cv_results(cv_results, y, 'time')
+            cds = proc_cv_results(cv_results, y, model.sample_dim)
             return cds
     elif RI_proc:
         model.make_RI(X, y)
@@ -370,7 +383,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     return model
 
 
-def proccess_cv_results(cvr, y, sample_dim):
+def proc_cv_results(cvr, y, sample_dim):
     """proccess cross_validation results and build an xarray with dims of y for
     them"""
     import xarray as xr
@@ -817,6 +830,7 @@ class ImprovedRegressor(RegressorWrapper):
         rds['resid'].attrs['long_name'] = 'Residuals'
         rds['dw_score'] = (rds['resid'].diff(self.sample_dim)**2).sum(self.sample_dim,
                                                                   keep_attrs=True) / (rds['resid']**2).sum(self.sample_dim, keep_attrs=True)
+        rds['corrcoef'] = self.corrcoef(X, y)
         # unstack dims:
         if mt_dim:
             rds = rds.unstack(mt_dim)
@@ -869,6 +883,22 @@ class ImprovedRegressor(RegressorWrapper):
         self.results_ = produce_RI(res_dict, feature_dim)
         self.X_ = X
         return
+
+    def corrcoef(self, X, y):
+        import numpy as np
+        import xarray as xr
+        feature_dim, mt_dim = get_feature_multitask_dim(X, y, self.sample_dim)
+        cor_mat = np.empty((X[feature_dim].size, y[mt_dim].size))
+        for i in range(X[feature_dim].size):
+            for j in range(y[mt_dim].size):
+                cor_mat[i, j] = np.corrcoef(X.isel({feature_dim: i}),
+                                            y.isel({mt_dim: j}))[0, 1]
+        corr = xr.DataArray(cor_mat, dims=[feature_dim, mt_dim])
+        corr[feature_dim] = X[feature_dim]
+        corr[mt_dim] = y[mt_dim]
+        corr.name = 'corrcoef'
+        corr.attrs['description'] = 'np.corrcoef on each regressor and geo point'
+        return corr
 
     def plot_like(self, field, **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
         from matplotlib.ticker import ScalarFormatter
