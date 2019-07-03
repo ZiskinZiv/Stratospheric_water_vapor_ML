@@ -7,8 +7,13 @@ Created on Sun Mar 10 13:20:30 2019
 """
 # TODO: build GridSearchCV support directley like ultioutput regressors
 # for various models
-from sklearn_xarray import RegressorWrapper
 
+from strat_startup import *
+from sklearn_xarray import RegressorWrapper
+# import warnings filter
+from warnings import simplefilter
+# ignore all future warnings
+simplefilter(action='ignore', category=FutureWarning)
 
 class parameters:
 
@@ -27,7 +32,6 @@ class parameters:
                  time_period=None,
                  area_mean=False,
                  original_data_file='swoosh_latpress-2.5deg.nc'):
-        import sys
         self.filing_order = ['data_name', 'field', 'model_name', 'season',
                              'reg_selection', 'special_run']
         self.delimeter = '_'
@@ -50,13 +54,9 @@ class parameters:
         self.time_period = time_period
         self.area_mean = area_mean
         self.original_data_file = original_data_file  # original data filename (in work_path)
-        if sys.platform == 'linux':
-            self.work_path = '/home/shlomi/Desktop/DATA/Work_Files/Chaim_Stratosphere_Data/'
-            self.cluster_path = '/mnt/cluster/'
-        elif sys.platform == 'darwin':  # mac os
-            self.work_path = '/Users/shlomi/Documents/Chaim_Stratosphere_Data/'
-            self.cluster_path = '/Users/shlomi/Documents/cluster/'
-
+        self.work_path = work_chaim
+        self.cluster_path = adams_path
+ 
     # update attrs from dict containing keys as attrs and vals as attrs vals
     # to be updated
 
@@ -87,30 +87,31 @@ class parameters:
         # pick ml model from ML_models class dict:
         ml = ML_Switcher()
         if model_name is not None:
-            ml_model = ml.pick_model(model_name, gridsearch)
+            ml_model = ml.pick_model(model_name)
             self.model_name = model_name
         else:
             ml_model = ml.pick_model(self.model_name, gridsearch)
         # set external parameters if i want:
         if ml_params is not None:
             ml_model.set_params(**ml_params)
+        self.param_grid = ml.param_grid
         return ml_model
 
 
 class ML_Switcher(object):
-    def pick_model(self, model_name, gridsearch=False):
+    def pick_model(self, model_name):
         """Dispatch method"""
-        from sklearn.model_selection import GridSearchCV
+        # from sklearn.model_selection import GridSearchCV
         self.param_grid = None
         method_name = str(model_name)
         # Get the method from 'self'. Default to a lambda.
         method = getattr(self, method_name, lambda: "Invalid ML Model")
-        if gridsearch:
-            return(GridSearchCV(method(), self.param_grid, n_jobs=-1,
-                                return_train_score=True))
-        else:
+#        if gridsearch:
+#            return(GridSearchCV(method(), self.param_grid, n_jobs=-1,
+#                                return_train_score=True))
+#        else:
             # Call the method as we return it
-            return method()
+        return method()
 
     def LR(self):
         from sklearn.linear_model import LinearRegression
@@ -143,8 +144,8 @@ class ML_Switcher(object):
     def KRR(self):
         from sklearn.kernel_ridge import KernelRidge
         import numpy as np
-        self.param_grid = {'gamma': np.logspace(-5, 1, 100),
-                           'alpha': np.logspace(-5, 2, 400)}
+        self.param_grid = {'gamma': np.logspace(-5, 1, 5),
+                           'alpha': np.logspace(-5, 2, 5)}
         return KernelRidge(kernel='poly', degree=3)
 
     def GPR(self):
@@ -169,13 +170,13 @@ class ML_Switcher(object):
 #        from sklearn.linear_model import RANSACRegressor
 #        from sklearn.linear_model import TheilSenRegressor
 #        from sklearn.linear_model import LinearRegression
-#        from sklearn.linear_model import Ridge
+#        from sklearn.linear_model impoml_modelrt Ridge
 #        from sklearn.linear_model import Lasso
 #        from sklearn.linear_model import MultiTaskLassoCV
 #        from sklearn.linear_model import MultiTaskLasso
 #        from sklearn.linear_model import MultiTaskElasticNet
 #        from sklearn.linear_model import ElasticNet
-#        from sklearn.kernel_ridge import KernelRidge
+#        from sklearn.kernel_ridge impoml_modelrt KernelRidge
 #        from sklearn.ensemble import RandomForestRegressor
 #        from sklearn.svm import SVR
 #        from sklearn.neural_network import MLPRegressor
@@ -197,6 +198,85 @@ class ML_Switcher(object):
 #        if self.model == 'Invalid':
 #            raise KeyError('WRONG MODEL NAME!!')
 #        return self.model
+def run_grid_multi(reg_stacked, da_stacked, params):
+    """run one grid_search_cv on a multioutputregressors(model)"""
+    import xarray as xrml_model
+    from aux_functions_strat import xr_order
+    params.grid_search.fit(reg_stacked, da_stacked)
+    rds = xr.Dataset()
+    rds['cv_results'] = process_gridsearch_results(params.grid_search)
+    rds['best_score'] = xr.DataArray(params.grid_search.best_score_)
+    rds['best_params'] = xr.DataArray(list(params.grid_search.best_params_.values()),
+                                      dims=['cv_params'])
+    rds['cv_params'] = list(params.grid_search.param_grid.keys())
+    rds.attrs['scoring_for_best'] = params.grid_search.refit
+    # predict = xr.DataArray([est.predict(reg_stacked) for est in
+    #                         params.multi.estimators_], dims='samples')
+    # rds['predict'] = predict
+    return params, rds
+
+
+def process_gridsearch_results(GridSearchCV):
+    import xarray as xr
+    import pandas as pd
+    """takes GridSreachCV object with cv_results and xarray it into dataarray"""
+    params = GridSearchCV.param_grid
+    scoring = GridSearchCV.scoring
+    names = [x for x in params.keys()]
+    if len(params) > 1:
+        # unpack param_grid vals to list of lists:
+        pro = [[y for y in x] for x in params.values()]
+        ind = pd.MultiIndex.from_product((pro), names=names)
+        result_names = [x for x in GridSearchCV.cv_results_.keys() if 'split'
+                        not in x and 'time' not in x and 'param' not in x and
+                        'rank' not in x]
+        ds = xr.Dataset()
+        for da_name in result_names:
+            da = xr.DataArray(GridSearchCV.cv_results_[da_name])
+            ds[da_name] = da
+        ds = ds.assign(dim_0=ind).unstack('dim_0')
+    elif len(params) == 1:
+        result_names = [x for x in GridSearchCV.cv_results_.keys() if 'split'
+                        not in x and 'time' not in x and 'param' not in x and
+                        'rank' not in x]
+        ds = xr.Dataset()
+        for da_name in result_names:
+            da = xr.DataArray(GridSearchCV.cv_results_[da_name], dims={**params})
+            ds[da_name] = da
+        for k, v in params.items():
+            ds[k] = v
+    ds['score'] = scoring
+    name = [x for x in ds.data_vars.keys() if 'mean_test' in x]
+    mean_test = xr.concat(ds[name].data_vars.values(), dim='score')
+    mean_test.name = 'mean_test'
+    name = [x for x in ds.data_vars.keys() if 'mean_train' in x]
+    mean_train = xr.concat(ds[name].data_vars.values(), dim='score')
+    mean_train.name = 'mean_train'
+    name = [x for x in ds.data_vars.keys() if 'std_test' in x]
+    std_test = xr.concat(ds[name].data_vars.values(), dim='score')
+    std_test.name = 'std_test'
+    name = [x for x in ds.data_vars.keys() if 'std_train' in x]
+    std_train = xr.concat(ds[name].data_vars.values(), dim='score')
+    std_train.name = 'std_train'
+    ds = ds.drop(ds.data_vars.keys())
+    ds['mean_test'] = mean_test
+    ds['mean_train'] = mean_train
+    ds['std_test'] = std_test
+    ds['std_train'] = std_train
+    mean_test_train = xr.concat(ds[['mean_train', 'mean_test']].data_vars.
+                                values(), dim='train_test')
+    std_test_train = xr.concat(ds[['std_train', 'std_test']].data_vars.
+                               values(), dim='train_test')
+    ds['train_test'] = ['train', 'test']
+    ds = ds.drop(ds.data_vars.keys())
+    ds['MEAN'] = mean_test_train
+    ds['STD'] = std_test_train
+    # CV = xr.Dataset(coords=GridSearchCV.param_grid)
+    ds = xr.concat(ds[['MEAN', 'STD']].data_vars.values(), dim='MEAN_STD')
+    ds['MEAN_STD'] = ['MEAN', 'STD']
+    ds.name = 'CV_results'
+    ds.attrs['param_names'] = names
+    return ds
 
 
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
@@ -243,7 +323,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     p = parameters(**arg_dict)
     # p.from_dict(arg_dict)
     # select model:
-    ml_model = p.select_model(model_name, ml_params, gridsearch)
+    ml_model = p.select_model(model_name, ml_params)
     # pre proccess:
     X, y = pre_proccess(p)
     # unpack regressors:
@@ -353,6 +433,12 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #            g = visualizer.poof()
 #            model.fit(X, y)
 #        else:
+#            if gridsearch:
+#                ml_model.set_params(cv=cv)
+#                print(ml_model.estimator)
+#                ml_model.fit(X, y)
+#                return ml_model
+#            else:
             model.set_params(cv=cv)
             print(model.estimator_)
             model.fit(X, y)
@@ -362,6 +448,14 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             from sklearn.model_selection import cross_validate
             cv = parse_cv(cv)
             # get multi-target dim:
+            if gridsearch:
+                from sklearn.model_selection import GridSearchCV
+                gr = GridSearchCV(ml_model, p.param_grid, cv=cv,
+                                  return_train_score=True, verbose=1)
+                mul = (MultiOutputRegressor(gr, n_jobs=1))
+                print(mul)
+                mul.fit(X, y)
+                return mul
             mt_dim = [x for x in y.dims if x != model.sample_dim][0]
             mul = (MultiOutputRegressor(model.estimator))
             print(mul)
@@ -529,7 +623,7 @@ def pre_proccess(params):
         nc_file = 'MERRA_' + species + '.nc'
         da = xr.open_dataarray(path + nc_file)
     elif dname == 'swoosh':
-        ds = xr.open_dataset(path + params.original_data_file)
+        ds = xr.open_dataset(path / params.original_data_file)
         field = params.swoosh_field + species + 'q'
         da = ds[field]
     # align time between y and X:
