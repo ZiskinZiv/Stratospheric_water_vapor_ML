@@ -1051,6 +1051,7 @@ class ImprovedRegressor(RegressorWrapper):
             ax.yaxis.set_major_formatter(ScalarFormatter())
             ax.set_title(times.attrs['long_name'] + ' predicted', loc='center')
             plt.subplots_adjust(left=0.05, right=0.995)
+            [ax.invert_yaxis() for ax in con.ax.figure.axes]
             plt.show()
             return con
         elif field in rds.attrs['error_types']:
@@ -1081,6 +1082,7 @@ class ImprovedRegressor(RegressorWrapper):
                 ax.xaxis.set_major_formatter(ScalarFormatter())
                 plt.suptitle(suptitle, fontsize=12, fontweight=750)
             plt.show()
+            plt.gca().invert_yaxis()
             return con
         elif field in rds.attrs['feature_types']:
             # TODO: add contour lines
@@ -1133,4 +1135,5 @@ class ImprovedRegressor(RegressorWrapper):
                 ax.xaxis.set_major_formatter(ScalarFormatter())
                 plt.suptitle(suptitle, fontsize=12, fontweight=750)
             plt.show()
+            [ax.invert_yaxis() for ax in fg.fig.axes]
             return fg
