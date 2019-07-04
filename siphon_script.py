@@ -8,7 +8,9 @@ Created on Thu Jul  4 13:55:37 2019
 
 from pathlib import Path
 from strato_soundings import siphon_igra2_to_xarray
-sound_path = Path('/home/ziskin/Work_Files/Chaim_Stratosphere_Data/sounding')
+from strat_startup import *
+# sound_path = Path('/home/ziskin/Work_Files/Chaim_Stratosphere_Data/sounding')
+sound_path = work_chaim / 'sounding'
 cwd = Path().cwd()
 import pandas as pd
 stations = pd.read_csv(cwd/ 'igra_eq_stations.txt', index_col=0)
