@@ -21,9 +21,133 @@ geo_igra2 = gpd.GeoDataFrame(igra2, geometry=gpd.points_from_xy(igra2.lon,
                                crs=world.crs)
 geo_igra2_eq = geo_igra2[np.abs(geo_igra2['lat'])<10]
 geo_igra2_eq = geo_igra2_eq[geo_igra2_eq['end_year'] >= 2017]
+geo_igra2_eq = geo_igra2_eq[geo_igra2_eq['start_year'] <= 1993]
 ax = world.plot()
 geo_igra2_eq.plot(ax=ax, column='alt', cmap='Reds', edgecolor='black',
                      legend=True)
+
+
+def calc_cold_point_from_sounding(path=sound_path, times=('1991', '2018'),
+                                  plot=True):
+    import xarray as xr
+    import seaborn as sns
+    from aux_functions_strat import deseason_xr
+    anom_list = []
+    for file in path.rglob('*.nc'):
+        name = file.as_posix().split('/')[-1].split('.')[0]
+        print('proccessing station {}:'.format(name))
+        station = xr.open_dataset(file)
+        station = station.sel(time=slice(times[0], times[1]))
+        cold = station.temperature.where(station.pressure < 130).min(
+            dim='point')
+        cold = cold.resample(time='MS').mean()
+        anom = deseason_xr(cold, how='mean')
+        anom.name = name
+        anom_list.append(anom)
+#        argmin_point = station.temperature.argmin(dim='point').values
+#        p_points = []
+#        for i, argmin in enumerate(argmin_point):
+#            p = station.pressure.sel(point=argmin).isel(time=i).values.item()
+#            p_points.append(p)
+#        sns.distplot(p_points, bins=100, color='c',
+#                     label='pressure_cold_points_' + name)
+    ds = xr.merge(anom_list)
+    da = ds.to_array(dim='name')
+    da.name = 'cold_point_anomalies'
+    if plot:
+        da.to_dataset(dim='name').to_dataframe().plot(subplots=True)
+    return da
+
+
+def siphon_igra2_to_xarray(station, path=sound_path,
+                           fields=['temperature', 'pressure'],
+                           times=['1984-01-01', '2019-06-30']):
+    from siphon.simplewebservice.igra2 import IGRAUpperAir
+    import pandas as pd
+    import numpy as np
+    import xarray as xr
+    dates = pd.to_datetime(times)
+    print('getting {} from IGRA2...'.format(station))
+    df, header = IGRAUpperAir.request_data(dates, station, derived=True)
+    dates = header['date'].values
+    print('splicing dataframe and converting to xarray dataset...')
+    ds_list = []
+    for date in dates:
+        dff = df[fields].loc[df['date'] == date]
+        # release = dff.iloc[0, 1]
+        dss = dff.to_xarray()
+        # dss.attrs['release'] = release
+        ds_list.append(dss)
+    max_ind = np.max([ds.index.size for ds in ds_list])
+    vars_ = np.nan * np.ones((len(dates), len(fields), max_ind))
+    for i, ds in enumerate(ds_list):
+        size = ds[[x for x in ds.data_vars][0]].size
+        vars_[i, :, 0:size] = ds.to_array().values
+    Vars = xr.DataArray(vars_, dims=['time', 'var', 'point'])
+    Vars['time'] = dates
+    Vars['var'] = fields
+    ds = Vars.to_dataset(dim='var')
+    for field in fields:
+        ds[field].attrs['units'] = df.units[field]
+    print('Done!')
+    filename = station + '.nc'
+    comp = dict(zlib=True, complevel=9)  # best compression
+    encoding = {var: comp for var in ds.data_vars}
+    ds.to_netcdf(path / filename, 'w', encoding=encoding)
+    print('saved {} to {}.'.format(filename, path))
+    return ds
+
+
+def run_pyigra_save_xarray(station, path=sound_path):
+    import subprocess
+    command = '/home/ziskin/anaconda3/bin/PyIGRA --id ' + station + ' --parameters TEMPERATURE,PRESSURE -o ' + station + '_pt.txt'
+    subprocess.call([command], shell=True)
+    pyigra_to_xarray(station + '_pt.txt', path=path)
+    return
+
+
+def pyigra_to_xarray(pyigra_output_filename, path=sound_path):
+    import pandas as pd
+    import xarray as xr
+    import numpy as np
+    df = pd.read_csv(sound_path / pyigra_output_filename,
+                     delim_whitespace=True)
+    dates = df['NOMINAL'].unique().tolist()
+    print('splicing dataframe and converting to xarray dataset...')
+    ds_list = []
+    for date in dates:
+        dff = df.loc[df.NOMINAL == date]
+        # release = dff.iloc[0, 1]
+        dff = dff.drop(['NOMINAL', 'RELEASE'], axis=1)
+        dss = dff.to_xarray()
+        # dss.attrs['release'] = release
+        ds_list.append(dss)
+    print('concatenating to time-series dataset')
+    datetimes = pd.to_datetime(dates, format='%Y%m%d%H')
+    max_ind = np.max([ds.index.size for ds in ds_list])
+    T = np.nan * np.ones((len(dates), max_ind))
+    P = np.nan * np.ones((len(dates), max_ind))
+    for i, ds in enumerate(ds_list):
+        tsize = ds['TEMPERATURE'].size
+        T[i, 0:tsize] = ds['TEMPERATURE'].values
+        P[i, 0:tsize] = ds['PRESSURE'].values
+    Tda = xr.DataArray(T, dims=['time', 'point'])
+    Tda.name = 'Temperature'
+    Tda.attrs['units'] = 'deg C'
+    Tda['time'] = datetimes
+    Pda = xr.DataArray(P, dims=['time', 'point'])
+    Pda.name = 'Pressure'
+    Pda.attrs['units'] = 'hPa'
+    Pda['time'] = datetimes
+    ds = Tda.to_dataset(name='Temperature')
+    ds['Pressure'] = Pda
+    print('Done!')
+    filename = pyigra_output_filename.split('.')[0] + '.nc'
+    comp = dict(zlib=True, complevel=9)  # best compression
+    encoding = {var: comp for var in ds.data_vars}
+    ds.to_netcdf(path / filename, 'w', encoding=encoding)
+    print('saved {} to {}.'.format(filename, path))
+    return ds
 
 
 def process_sounding_json(savepath=sound_path, igra_id='BRM00082332'):
@@ -33,7 +157,7 @@ def process_sounding_json(savepath=sound_path, igra_id='BRM00082332'):
     import xarray as xr
     import os
     # loop over lines lists in each year:
-    pw_years = []
+    # pw_years = []
     df_years = []
     bad_line = []
     for file in sorted(savepath.glob(igra_id + '*.json')):
@@ -91,15 +215,22 @@ def process_sounding_json(savepath=sound_path, igra_id='BRM00082332'):
                 continue
             except AssertionError:
                 bad_line.append(lines)
+            except ValueError:
+                bad_line.append(lines)
                 continue
         # pw_year = xr.DataArray(pw_list, dims=['time'])
         df_year = [xr.DataArray(x, dims=['mpoint', 'var']) for x in df_list]
-        df_year = xr.concat(df_year, 'time')
-        df_year['time'] = dt_list
-        df_year['var'] = header
-        # pw_year['time'] = dt_list
-        # pw_years.append(pw_year)
-        df_years.append(df_year)
+        try:
+            df_year = xr.concat(df_year, 'time')
+            df_year['time'] = dt_list
+            df_year['var'] = header
+            # pw_year['time'] = dt_list
+            # pw_years.append(pw_year)
+            df_years.append(df_year)
+        except ValueError:
+            print('year {} file is bad data or missing...'.format(year))
+            continue
+        # return df_list, bad_line
     # pw = xr.concat(pw_years, 'time')
     da = xr.concat(df_years, 'time')
     da.attrs['description'] = 'upper air soundings full profile'
@@ -117,5 +248,6 @@ def process_sounding_json(savepath=sound_path, igra_id='BRM00082332'):
     # drop 0 pw - not physical
     # pw = pw.where(pw > 0, drop=True)
     # pw.to_netcdf(savepath / 'PW_bet_dagan_soundings.nc', 'w')
-    da.to_netcdf(savepath / igra_id + '_soundings.nc', 'w')
+    filename = igra_id + '_sounding.nc'
+    da.to_netcdf(savepath / filename, 'w')
     return da, bad_line
