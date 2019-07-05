@@ -13,7 +13,15 @@ from strat_startup import *
 sound_path = work_chaim / 'sounding'
 cwd = Path().cwd()
 import pandas as pd
+skipped = 0
+already_dl = 0
 stations = pd.read_csv(cwd/ 'igra_eq_stations.txt', index_col=0)
 for station in stations.values:
     st = station[0]
-    siphon_igra2_to_xarray(st, path=sound_path)
+    ds = siphon_igra2_to_xarray(st, path=sound_path)
+    if ds == '1':
+        already_dl += 1
+    elif ds == '2':
+        skipped += 1
+    print('already dl: {}, skipped so far: {}'.format(already_dl, skipped))
+print('ALL FILES DONE!')
