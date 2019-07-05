@@ -6,11 +6,24 @@ Created on Mon Oct 22 10:33:05 2018
 @author: shlomi
 """
 
-def days_from(days, start_date):
-    
-    
-    time=1
-    return time
+
+def configure_logger(name='general', filename=None):
+    import logging
+    import sys
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    if filename is not None:
+        file_handler = logging.FileHandler(filename=filename, mode='a')
+        handlers = [file_handler, stdout_handler]
+    else:
+        handlers = [stdout_handler]
+
+    logging.basicConfig(
+            level=logging.INFO,
+            format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s',
+            handlers=handlers
+            )
+    logger = logging.getLogger(name=name)
+    return logger
 
 # choice of picking all possible permutaions : 2**len(reg_vector) - 1
 
