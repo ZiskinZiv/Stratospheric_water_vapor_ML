@@ -10,6 +10,7 @@ from strat_startup import *
 import pandas as pd
 import geopandas as gpd
 import numpy as np
+from aux_functions_strat import configure_logger
 sound_path = work_chaim / 'sounding'
 igra2 = pd.read_fwf(cwd / 'igra2-station-list.txt', header=None)
 igra2.columns = ['station_number', 'lat', 'lon', 'alt', 'name', 'start_year',
@@ -24,7 +25,8 @@ geo_igra2_eq = geo_igra2_eq[geo_igra2_eq['end_year'] >= 2017]
 geo_igra2_eq = geo_igra2_eq[geo_igra2_eq['start_year'] <= 1993]
 ax = world.plot()
 geo_igra2_eq.plot(ax=ax, column='alt', cmap='Reds', edgecolor='black',
-                     legend=True)
+                  legend=True)
+logger = configure_logger(name='strato_sounding')
 
 
 def calc_cold_point_from_sounding(path=sound_path, times=('1991', '2018'),
@@ -66,11 +68,29 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     import pandas as pd
     import numpy as np
     import xarray as xr
+    from urllib.error import URLError
+    import logging
+
+    logger = logging.getLogger('strato_sounding')
+#    logging.basicConfig(filename=path / 'siphon.log', level=logging.INFO,
+#                        format='%(asctime)s  %(levelname)-10s %(processName)s  %(name)s %(message)s')
+    # check for already d/l files:
+    names = [x.as_posix().split('/')[-1].split('.')[0] for x in
+             path.rglob('*.nc')]
+    if station in names:
+        logging.warning('station {} already downloaded, skipping'.format(station))
+        return '1'
+    logger.info('fields chosen are: {}'.format(fields))
+    logger.info('dates chosen are: {}'.format(times))
     dates = pd.to_datetime(times)
-    print('getting {} from IGRA2...'.format(station))
-    df, header = IGRAUpperAir.request_data(dates, station, derived=True)
+    logger.info('getting {} from IGRA2...'.format(station))
+    try:
+        df, header = IGRAUpperAir.request_data(dates, station, derived=True)
+    except URLError:
+        logger.warning('file not found using siphon.skipping...')
+        return '2'
     dates = header['date'].values
-    print('splicing dataframe and converting to xarray dataset...')
+    logger.info('splicing dataframe and converting to xarray dataset...')
     ds_list = []
     for date in dates:
         dff = df[fields].loc[df['date'] == date]
@@ -89,12 +109,12 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     ds = Vars.to_dataset(dim='var')
     for field in fields:
         ds[field].attrs['units'] = df.units[field]
-    print('Done!')
+    logger.info('Done!')
     filename = station + '.nc'
     comp = dict(zlib=True, complevel=9)  # best compression
     encoding = {var: comp for var in ds.data_vars}
     ds.to_netcdf(path / filename, 'w', encoding=encoding)
-    print('saved {} to {}.'.format(filename, path))
+    logger.info('saved {} to {}.'.format(filename, path))
     return ds
 
 
