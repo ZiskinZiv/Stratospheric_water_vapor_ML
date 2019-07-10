@@ -29,20 +29,81 @@ geo_igra2_eq.plot(ax=ax, column='alt', cmap='Reds', edgecolor='black',
 logger = configure_logger(name='strato_sounding')
 
 
-def calc_cold_point_from_sounding(path=sound_path, times=('1991', '2018'),
-                                  plot=True):
+def read_RATPAC_B_meta_data(path=sound_path):
+    import pandas as pd
+    df = pd.read_fwf(path / 'ratpac-stations.txt', skiprows=14,
+                     delim_whitespace=True)
+    df.drop('   ', axis=1, inplace=True)
+    cols = [x.strip(' ') for x in df.columns]
+    df.columns = cols
+    return df
+
+
+def read_RATPAC_B_data(path=sound_path):
+    import pandas as pd
+    import xarray as xr
+    df = read_RATPAC_B_meta_data(path)
+    header = ['n', 'year', 'month', 'surf', '850', '700', '500', '400',
+              '300', '250', '200', '150', '100', '70', '50', '3', 'WMO']
+    dff = pd.read_csv(sound_path / 'RATPAC-B-monthly-combined.txt',
+                      header=None, delim_whitespace=True)
+    dff.columns = header
+    dff['datetime'] = pd.to_datetime(dff['year'].astype(str) + '-' +
+                                     dff['month'].astype(str))
+    dff.index = dff['datetime']
+    dff.index.name = 'time'
+    dff.drop(['year', 'month', 'datetime'], axis=1, inplace=True)
+    da_list = []
+    for i, row in df.iterrows():
+        WMO = row['WMO']
+        print('proccesing {} station ({})'.format(row['NAME'], WMO))
+        sub_df = dff[dff['WMO'] == WMO]
+        sub_df.drop(['n', 'WMO'], axis=1, inplace=True)
+        sub_df.replace(999, np.nan, inplace=True)
+        da = sub_df.to_xarray()
+        da = da.rename({'surf': '1000'})
+        da = da.to_array(dim='pressure')
+        da['pressure'] = [int(x) for x in da.pressure.values]
+        da.name = 'T_anom_' + str(WMO)
+        da.attrs['station_name'] = row['NAME']
+        da.attrs['station_country'] = row['CC']
+        da.attrs['station_lat'] = row['LAT']
+        da.attrs['station_lon'] = row['LON']
+        da.attrs['station_alt'] = row['ELEV']
+        da_list.append(da)
+    ds = xr.merge(da_list)
+    ds = ds.sortby('time')
+    return ds
+
+
+def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2018'),
+                                  plot=True, return_cold=True, stations=None):
     import xarray as xr
     import seaborn as sns
     from aux_functions_strat import deseason_xr
     anom_list = []
     for file in path.rglob('*.nc'):
         name = file.as_posix().split('/')[-1].split('.')[0]
+        if stations is not None:
+            if name not in stations:
+                continue
         print('proccessing station {}:'.format(name))
         station = xr.open_dataset(file)
         station = station.sel(time=slice(times[0], times[1]))
-        cold = station.temperature.where(station.pressure < 130).min(
-            dim='point')
-        cold = cold.resample(time='MS').mean()
+        # take Majuro station data after 2011 only nighttime:
+        if name == 'RMM00091376':
+            station_after_2011 = station.sel(time=slice('2011', times[1])).where(station['time.hour']==00)
+            station_before_2011 = station.sel(time=slice(times[0], '2010'))
+            station = xr.concat([station_before_2011, station_after_2011],
+                                'time')
+        # slice with cold point being between 80 and 130 hPa
+        cold = station.temperature.where(station.pressure <= 120).where(
+                station.pressure >= 80).min(
+                dim='point')
+        try:
+            cold = cold.resample(time='MS').mean()
+        except IndexError:
+            continue
         anom = deseason_xr(cold, how='mean')
         anom.name = name
         anom_list.append(anom)
@@ -55,9 +116,14 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1991', '2018'),
 #                     label='pressure_cold_points_' + name)
     ds = xr.merge(anom_list)
     da = ds.to_array(dim='name')
-    da.name = 'cold_point_anomalies'
+    da.name = 'radiosonde_cold_point_anomalies'
+    cold_da = da.where(np.abs(da) < 3).mean('name')
     if plot:
-        da.to_dataset(dim='name').to_dataframe().plot(subplots=True)
+        cold_da.plot()
+    if return_cold:
+        return cold_da
+    else:
+        return da
     return da
 
 
