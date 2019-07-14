@@ -136,12 +136,13 @@ def get_randel_corr():
     import seaborn as sns
     import pandas as pd
     from strato_soundings import calc_cold_point_from_sounding
-    radio_cold = calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
-                                  plot=False, return_cold=True)
+#    radio_cold = calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
+#                                  plot=False, return_cold=True)
     radio_cold2 = calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
                                   plot=False, return_cold=True,
-                                  stations=['BRM00082332','RMM00091376'])
-    radio_cold2.name = 'radiosonde_cold_point_anomalies_2_stations'
+                                  stations=['BRM00082332','RMM00091376',
+                                            'KEM00063741'])
+    radio_cold2.name = 'radiosonde_cold_point_anomalies_3_stations'
     swoosh = xr.open_dataset(work_chaim / 'swoosh_latpress-2.5deg.nc')
     haloe = xr.open_dataset(work_chaim /
                             'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
@@ -191,8 +192,8 @@ def get_randel_corr():
                            era40anom_latmean.squeeze(drop=True),
                            era5anom_latmean.squeeze(drop=True),
                            merraanom_latmean.squeeze(drop=True),
-                           radio_cold.squeeze(drop=True),
                            radio_cold2.squeeze(drop=True)])
+                           # radio_cold2.squeeze(drop=True)])
     # to_compare.to_dataframe().plot()
     # plt.figure()
     # sns.heatmap(to_compare.to_dataframe().corr(), annot=True)

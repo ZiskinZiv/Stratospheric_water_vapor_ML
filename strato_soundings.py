@@ -97,7 +97,7 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2018'),
             station = xr.concat([station_before_2011, station_after_2011],
                                 'time')
         # slice with cold point being between 80 and 130 hPa
-        cold = station.temperature.where(station.pressure <= 120).where(
+        cold = station['temperature'].where(station.pressure <= 120).where(
                 station.pressure >= 80).min(
                 dim='point')
         try:
