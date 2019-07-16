@@ -76,36 +76,46 @@ def read_RATPAC_B_data(path=sound_path):
     return ds
 
 
-def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2018'),
-                                  plot=True, return_cold=True, stations=None):
+def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
+                                  plot=True, return_mean=True, stations=None):
     import xarray as xr
-    import seaborn as sns
+#     import seaborn as sns
     from aux_functions_strat import deseason_xr
+
+    def anom_one_station(file_obj, name):
+        print('proccessing station {}:'.format(name))
+        station = xr.open_dataset(file)
+        station = station.sel(time=slice(times[0], times[1]))
+        # take Majuro station data after 2011 only nighttime:
+#        if name == 'RMM00091376':
+#            station_after_2011 = station.sel(time=slice('2011', times[1])).where(station['time.hour']==00)
+#            station_before_2011 = station.sel(time=slice(times[0], '2010'))
+#            station = xr.concat([station_before_2011, station_after_2011],
+#                                'time')
+        # slice with cold point being between 80 and 130 hPa
+        cold = station['temperature'].where(station.pressure <= 120).where(
+                station.pressure >= 80).min(
+                dim='point')
+        # take the min and ensure it is below -72 degC:
+        cold = station.temperature.min('point')
+        cold = cold.where(cold<-72)
+        cold.attrs = station.attrs
+
+        try:
+            cold = cold.resample(time='MS').mean()
+        except IndexError:
+            return
+        anom = deseason_xr(cold, how='mean')
+        anom.name = name
+        return anom
+
     anom_list = []
     for file in path.rglob('*.nc'):
         name = file.as_posix().split('/')[-1].split('.')[0]
         if stations is not None:
             if name not in stations:
                 continue
-        print('proccessing station {}:'.format(name))
-        station = xr.open_dataset(file)
-        station = station.sel(time=slice(times[0], times[1]))
-        # take Majuro station data after 2011 only nighttime:
-        if name == 'RMM00091376':
-            station_after_2011 = station.sel(time=slice('2011', times[1])).where(station['time.hour']==00)
-            station_before_2011 = station.sel(time=slice(times[0], '2010'))
-            station = xr.concat([station_before_2011, station_after_2011],
-                                'time')
-        # slice with cold point being between 80 and 130 hPa
-        cold = station['temperature'].where(station.pressure <= 120).where(
-                station.pressure >= 80).min(
-                dim='point')
-        try:
-            cold = cold.resample(time='MS').mean()
-        except IndexError:
-            continue
-        anom = deseason_xr(cold, how='mean')
-        anom.name = name
+        anom = anom_one_station(file, name)
         anom_list.append(anom)
 #        argmin_point = station.temperature.argmin(dim='point').values
 #        p_points = []
@@ -117,11 +127,12 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2018'),
     ds = xr.merge(anom_list)
     da = ds.to_array(dim='name')
     da.name = 'radiosonde_cold_point_anomalies'
-    cold_da = da.where(np.abs(da) < 3).mean('name')
+#     mean_da = da.where(np.abs(da) < 3).mean('name')
+    mean_da = da.mean('name')
     if plot:
-        cold_da.plot()
-    if return_cold:
-        return cold_da
+        da.to_dataset('name').to_dataframe().plot()
+    if return_mean:
+        return mean_da
     else:
         return da
     return da
@@ -129,7 +140,7 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2018'),
 
 def siphon_igra2_to_xarray(station, path=sound_path,
                            fields=['temperature', 'pressure'],
-                           times=['1984-01-01', '2019-06-30']):
+                           times=['1984-01-01', '2019-06-30'], derived=False):
     from siphon.simplewebservice.igra2 import IGRAUpperAir
     import pandas as pd
     import numpy as np
@@ -151,10 +162,11 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     dates = pd.to_datetime(times)
     logger.info('getting {} from IGRA2...'.format(station))
     try:
-        df, header = IGRAUpperAir.request_data(dates, station, derived=True)
+        df, header = IGRAUpperAir.request_data(dates, station, derived=derived)
     except URLError:
         logger.warning('file not found using siphon.skipping...')
         return '2'
+    header = header[header['number_levels'] > 25]  # enough resolution
     dates = header['date'].values
     logger.info('splicing dataframe and converting to xarray dataset...')
     ds_list = []
@@ -175,8 +187,14 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     ds = Vars.to_dataset(dim='var')
     for field in fields:
         ds[field].attrs['units'] = df.units[field]
+    ds.attrs['site_id'] = header.loc[:, 'site_id'].values[0]
+    ds.attrs['lat'] = header.loc[:, 'latitude'].values[0]
+    ds.attrs['lon'] = header.loc[:, 'longitude'].values[0]
     logger.info('Done!')
-    filename = station + '.nc'
+    if derived:
+        filename = station + '_derived' + '.nc'
+    else:
+        filename = station + '_not_derived' + '.nc'
     comp = dict(zlib=True, complevel=9)  # best compression
     encoding = {var: comp for var in ds.data_vars}
     ds.to_netcdf(path / filename, 'w', encoding=encoding)
