@@ -474,7 +474,7 @@ def weighted_mean_decraped(xarray):
 
 
 def deseason_xr(data, how='std', month='all', season=None, clim=False,
-                verbose=True):
+                verbose=True, tdim='time'):
     """deseason data: 'mean'= remove long-term monthly mean
     'std'= remove long-term monthly mean and divide by long term monthly std
     month is selecting the spesific months, season is selecting the spesific seasons,
@@ -487,10 +487,10 @@ def deseason_xr(data, how='std', month='all', season=None, clim=False,
     attrs = data.attrs
     field_name = data.name
     # first compute the monthly and seasonaly long term mean and std:
-    month_mean = data.groupby('time.month').mean('time')
-    month_std = data.groupby('time.month').std('time')
-    season_mean = data.groupby('time.season').mean('time')
-    season_std = data.groupby('time.season').std('time')
+    month_mean = data.groupby(tdim + '.month').mean(tdim)
+    month_std = data.groupby(tdim + '.month').std(tdim)
+    season_mean = data.groupby(tdim + '.season').mean(tdim)
+    season_std = data.groupby(tdim + '.season').std(tdim)
     if (month == 'all') and (season == 'all'):
         return print('month and season cant be both all, pick one..')
     # first do all data (all months):
@@ -507,12 +507,12 @@ def deseason_xr(data, how='std', month='all', season=None, clim=False,
             return xds
         elif how == 'mean':
             # remove just the monthly mean:
-            xrr = data.groupby('time.month') - month_mean
+            xrr = data.groupby(tdim + '.month') - month_mean
             comment = 'removed the long term monthly mean'
         elif how == 'std':
             # remove the monthly mean and divide by monthly std
-            data = data.groupby('time.month') - month_mean
-            xrr = data.groupby('time.month') / month_std
+            data = data.groupby(tdim + '.month') - month_mean
+            xrr = data.groupby(tdim + '.month') / month_std
             comment = 'removed the long term monthly mean and divided by the long trem monthly std'
     # now check for seasonal mean only:
     elif season == 'all':
@@ -532,31 +532,31 @@ def deseason_xr(data, how='std', month='all', season=None, clim=False,
             comment = 'removed the seasonal mean'
         elif how == 'std':
             # remove the seasonal mean and divide by seasonal std
-            data = data.groupby('time.season') - season_mean
-            xrr = data.groupby('time.season') / season_std
+            data = data.groupby(tdim + '.season') - season_mean
+            xrr = data.groupby(tdim + '.season') / season_std
             comment = 'removed the seasonal mean and divided by the seasonal std'
     # now slice only spesific month from data:
     elif (month != 'all') and (season is None):
-        data = data.sel(time=data['time.month'] == month)
+        data = data.sel(time=data[tdim + '.month'] == month)
         if how == 'mean':
             # remove just the spesific month mean:
-            xrr = data - data.mean('time')
+            xrr = data - data.mean(tdim)
             comment = 'selected month #' + str(month) + ' and removed the time mean'
         elif how == 'std':
             # remove the spesific month mean and divide by month std
-            data = data - data.mean('time')
-            xrr = data / data.std('time')
+            data = data - data.mean(tdim)
+            xrr = data / data.std(tdim)
             comment = 'selected month #' + str(month) + ' and removed the time mean and divided by std'
     elif (season != 'all') and (season is not None):
-        data = data.sel(time=data['time.season'] == season)
+        data = data.sel(time=data[tdim + '.season'] == season)
         if how == 'mean':
             # remove just the spesific season mean:
-            xrr = data - data.mean('time')
+            xrr = data - data.mean(tdim)
             comment = 'selected season ' + str(season) + ' and removed the time mean'
         elif how == 'std':
             # remove the spesific season mean and divide by season std
-            data = data - data.mean('time')
-            xrr = data / data.std('time')
+            data = data - data.mean(tdim)
+            xrr = data / data.std(tdim)
             comment = 'selected season ' + str(season) + ' and removed the time mean and divided by std'
     if verbose:
         if field_name is not None:
