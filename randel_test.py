@@ -128,7 +128,8 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
 
     return texts
 
-def get_randel_corr():
+
+def get_randel_corr(lats=[-10, 10], times=['1993', '2018']):
     import numpy as np
     import xarray as xr
     import aux_functions_strat as aux
@@ -138,44 +139,49 @@ def get_randel_corr():
     from strato_soundings import calc_cold_point_from_sounding
 #    radio_cold = calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
 #                                  plot=False, return_cold=True)
-    radio_cold2 = calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
-                                  plot=False, return_cold=True,
-                                  stations=['BRM00082332','RMM00091376',
-                                            'KEM00063741'])
-    radio_cold2.name = 'radiosonde_cold_point_anomalies_3_stations'
+    radio_cold3 = calc_cold_point_from_sounding(path=sound_path,
+                                                times=(times[0], times[1]),
+                                                plot=False, return_mean=True)
+    radio_cold3.name = 'radiosonde_cold_point_anomalies_3_stations'
+    radio_smooth = radio_cold3.rolling(time=3, center=True).mean()
+    radio_smooth.name = 'radiosonde_smooth_3_months'
     swoosh = xr.open_dataset(work_chaim / 'swoosh_latpress-2.5deg.nc')
     haloe = xr.open_dataset(work_chaim /
                             'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
     haloe['time'] = swoosh.time
     haloe_names = [x for x in haloe.data_vars.keys()
                    if 'haloe' in x and 'h2o' in x]
-    haloe = haloe[haloe_names].sel(level=slice(83, 81), lat=slice(-20, 20))
+    haloe = haloe[haloe_names].sel(level=slice(83, 81), lat=slice(lats[0],
+                                                                  lats[1]))
     # com=swoosh.combinedanomfillanomh2oq
     com = swoosh.combinedanomfillanomh2oq
     com_nofill = swoosh.combinedanomh2oq
-    com = com.sel(level=slice(83, 81), lat=slice(-20, 20))
-    com_nofill = com_nofill.sel(level=slice(83, 81), lat=slice(-20, 20))
+    com = com.sel(level=slice(83, 81), lat=slice(lats[0], lats[1]))
+    com_nofill = com_nofill.sel(level=slice(83, 81), lat=slice(lats[0],
+                                                               lats[1]))
     weights = np.cos(np.deg2rad(com['lat'].values))
     com_latmean = (weights * com).sum('lat') / sum(weights)
     com_latmean_2M_lagged = com_latmean.shift(time=-2)
     com_latmean_2M_lagged.name = com_latmean.name + ' + 2M lag'
     com_nofill_latmean = (weights * com_nofill).sum('lat') / sum(weights)
+    com_nofill_latmean_2M_lagged = com_nofill_latmean.shift(time=-2)
+    com_nofill_latmean_2M_lagged.name = com_nofill_latmean.name + ' + 2M lag'
     haloe_latmean = (weights * haloe.haloeanomh2oq).sum('lat') / sum(weights)
     era40 = xr.open_dataarray(work_chaim / 'ERA40_T_mm_eq.nc')
     era40 = era40.sel(level=100)
     weights = np.cos(np.deg2rad(era40['lat'].values))
     era40_latmean = (weights * era40).sum('lat') / sum(weights)
-    era40anom_latmean = aux.deseason_xr(era40_latmean)
+    era40anom_latmean = aux.deseason_xr(era40_latmean, how='mean')
     era40anom_latmean.name = 'era40_100hpa_anomalies'
     era5 = xr.open_dataarray(work_chaim / 'ERA5_T_eq_all.nc')
     cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
                                                      'lon'])
-    cold_point = aux.deseason_xr(cold_point)
+    cold_point = aux.deseason_xr(cold_point, how='mean')
     cold_point.name = 'cold_point_from_era5'
     era5 = era5.mean('lon').sel(level=100)
     weights = np.cos(np.deg2rad(era5['lat'].values))
     era5_latmean = (weights * era5).sum('lat') / sum(weights)
-    era5anom_latmean = aux.deseason_xr(era5_latmean)
+    era5anom_latmean = aux.deseason_xr(era5_latmean, how='mean')
     era5anom_latmean.name = 'era5_100hpa_anomalies'
     merra = xr.open_dataarray(work_chaim / 'T_regrided.nc')
     merra['time'] = pd.date_range(start='1979', periods=merra.time.size, freq='MS')
@@ -183,22 +189,25 @@ def get_randel_corr():
     weights = np.cos(np.deg2rad(merra['lat'].values))
     merra_latmean = (weights * merra).sum('lat') / sum(weights)
     merra_latmean.name = 'merra'
-    merraanom_latmean = aux.deseason_xr(merra_latmean)
+    merraanom_latmean = aux.deseason_xr(merra_latmean, how='mean')
     merraanom_latmean.name = 'merra_100hpa_anomalies'
     to_compare = xr.merge([com_nofill_latmean.squeeze(drop=True),
+                           com_nofill_latmean_2M_lagged.squeeze(drop=True),
                            com_latmean.squeeze(drop=True),
                            com_latmean_2M_lagged.squeeze(drop=True),
                            cold_point,
                            era40anom_latmean.squeeze(drop=True),
                            era5anom_latmean.squeeze(drop=True),
                            merraanom_latmean.squeeze(drop=True),
-                           radio_cold2.squeeze(drop=True)])
+                           radio_cold3.squeeze(drop=True),
+                           radio_smooth.squeeze(drop=True)])
                            # radio_cold2.squeeze(drop=True)])
     # to_compare.to_dataframe().plot()
     # plt.figure()
     # sns.heatmap(to_compare.to_dataframe().corr(), annot=True)
     # plt.subplots_adjust(left=0.35, bottom=0.4, right=0.95)
-    to_compare.sel(time=slice('1993', '2018')).to_dataframe().plot()
+    # to_compare.sel(time=slice('1993', '2018')).to_dataframe().plot()
+    to_compare = to_compare.sel(time=slice(times[0], times[1]))
     corr = to_compare.to_dataframe().corr()
     # sns.heatmap(to_compare.sel(time=slice('1993', '2018')).to_dataframe().corr(),
     #             annot=True)
@@ -207,6 +216,13 @@ def get_randel_corr():
     im, cbar = heatmap(corr.values, corr.index.values, corr.columns, ax=ax,
                        cmap="YlGn", cbarlabel="correlation")
     texts = annotate_heatmap(im, valfmt="{x:.2f}")
+    font = {'family': 'serif',
+            'color': 'darkred',
+            'weight': 'normal',
+            'size': 16,
+            }
+    plt.title('Correlation Heatmap of times: {} to {} , latmean: {} to {}'.format(
+            times[0], times[1], lats[0], lats[1]), fontdict=font)
     fig.tight_layout()
     plt.show()
     # plt.subplots_adjust(left=0.35, bottom=0.4, right=0.95)
