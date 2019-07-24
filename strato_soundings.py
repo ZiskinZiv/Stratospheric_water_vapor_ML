@@ -87,11 +87,12 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
         station = xr.open_dataset(file)
         station = station.sel(time=slice(times[0], times[1]))
         # take Majuro station data after 2011 only nighttime:
-#        if name == 'RMM00091376':
-#            station_after_2011 = station.sel(time=slice('2011', times[1])).where(station['time.hour']==00)
-#            station_before_2011 = station.sel(time=slice(times[0], '2010'))
-#            station = xr.concat([station_before_2011, station_after_2011],
-#                                'time')
+        if 'RMM00091376' in name:
+            print('taking just the midnight soundings after 2011 for {}'.format(name))
+            station_after_2011 = station.sel(time=slice('2011', times[1])).where(station['time.hour']==00)
+            station_before_2011 = station.sel(time=slice(times[0], '2010'))
+            station = xr.concat([station_before_2011, station_after_2011],
+                                'time')
         # slice with cold point being between 80 and 130 hPa
         cold = station['temperature'].where(station.pressure <= 120).where(
                 station.pressure >= 80).min(
