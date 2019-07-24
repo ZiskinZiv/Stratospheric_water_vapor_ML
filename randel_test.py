@@ -7,6 +7,36 @@ Created on Thu Apr 11 13:12:22 2019
 """
 from strat_startup import *
 sound_path = work_chaim / 'sounding'
+
+
+def read_ascii_randel(path, filename='h2o_all_timeseries_for_corr.dat'):
+    import pandas as pd
+    import numpy as np
+    with open(path / filename) as f:
+        content = f.readlines()
+    content = [x.strip() for x in content]
+    content = [x.split() for x in content]
+    content.pop(0)
+    # flatten list:
+    flat_content = [item for sublist in content for item in sublist]
+    # turn it to float:
+    flat_content = [float(x) for x in flat_content]
+    # find first bad value:
+    pos = [i for i, x in enumerate(flat_content) if x == 1e36][0]
+    # seperate to two list:
+    dates = pd.to_datetime(flat_content[0:pos-1], origin='julian', unit='D')
+    start_date = str(dates.year[0]) + '-' + str(dates.month[0]) + '-' + '01'
+    dates_new = pd.date_range(start_date, freq='MS', periods=len(dates))
+    wv = flat_content[pos: -1]
+    df = pd.DataFrame(wv, index=dates_new)
+    df = df.replace(1e36, np.nan)
+    df.index.name = 'time'
+    df.columns = ['wv_anoms_HALOE_MLS']
+    ds = df.to_xarray()
+    da = ds.to_array(name='wv_anoms_HALOE_MLS').squeeze(drop=True)
+    return da
+
+
 def heatmap(data, row_labels, col_labels, ax=None,
             cbar_kw={}, cbarlabel="", **kwargs):
     """
@@ -129,7 +159,7 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
     return texts
 
 
-def get_randel_corr(lats=[-10, 10], times=['1993', '2018']):
+def get_randel_corr(lats=[-10, 10], times=['1993', '2017']):
     import numpy as np
     import xarray as xr
     import aux_functions_strat as aux
@@ -145,6 +175,9 @@ def get_randel_corr(lats=[-10, 10], times=['1993', '2018']):
     radio_cold3.name = 'radiosonde_cold_point_anomalies_3_stations'
     radio_smooth = radio_cold3.rolling(time=3, center=True).mean()
     radio_smooth.name = 'radiosonde_smooth_3_months'
+    wv_anoms_HM = read_ascii_randel(cwd)
+    wv_anoms_HM_2M_lagged = wv_anoms_HM.shift(time=-2)
+    wv_anoms_HM_2M_lagged.name = wv_anoms_HM.name + ' + 2M lag'
     swoosh = xr.open_dataset(work_chaim / 'swoosh_latpress-2.5deg.nc')
     haloe = xr.open_dataset(work_chaim /
                             'swoosh-v02.6-198401-201812/swoosh-v02.6-198401-201812-latpress-2.5deg-L31.nc', decode_times=False)
@@ -196,6 +229,7 @@ def get_randel_corr(lats=[-10, 10], times=['1993', '2018']):
                            com_latmean.squeeze(drop=True),
                            com_latmean_2M_lagged.squeeze(drop=True),
                            cold_point,
+                           wv_anoms_HM, wv_anoms_HM_2M_lagged,
                            era40anom_latmean.squeeze(drop=True),
                            era5anom_latmean.squeeze(drop=True),
                            merraanom_latmean.squeeze(drop=True),
