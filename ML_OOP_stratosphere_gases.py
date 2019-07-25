@@ -245,18 +245,17 @@ def process_gridsearch_results(GridSearchCV):
             ds[da_name] = da
         for k, v in params.items():
             ds[k] = v
-    ds['score'] = scoring
     name = [x for x in ds.data_vars.keys() if 'mean_test' in x]
-    mean_test = xr.concat(ds[name].data_vars.values(), dim='score')
+    mean_test = xr.concat(ds[name].data_vars.values(), dim='scoring')
     mean_test.name = 'mean_test'
     name = [x for x in ds.data_vars.keys() if 'mean_train' in x]
-    mean_train = xr.concat(ds[name].data_vars.values(), dim='score')
+    mean_train = xr.concat(ds[name].data_vars.values(), dim='scoring')
     mean_train.name = 'mean_train'
     name = [x for x in ds.data_vars.keys() if 'std_test' in x]
-    std_test = xr.concat(ds[name].data_vars.values(), dim='score')
+    std_test = xr.concat(ds[name].data_vars.values(), dim='scoring')
     std_test.name = 'std_test'
     name = [x for x in ds.data_vars.keys() if 'std_train' in x]
-    std_train = xr.concat(ds[name].data_vars.values(), dim='score')
+    std_train = xr.concat(ds[name].data_vars.values(), dim='scoring')
     std_train.name = 'std_train'
     ds = ds.drop(ds.data_vars.keys())
     ds['mean_test'] = mean_test
@@ -276,6 +275,11 @@ def process_gridsearch_results(GridSearchCV):
     ds['MEAN_STD'] = ['MEAN', 'STD']
     ds.name = 'CV_results'
     ds.attrs['param_names'] = names
+    if isinstance(scoring, str):
+        ds.attrs['scoring'] = scoring
+        ds = ds.reset_coords(drop=True)
+    else:
+        ds['scoring'] = scoring
     return ds
 
 
