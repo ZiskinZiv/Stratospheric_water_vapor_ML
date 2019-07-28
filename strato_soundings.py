@@ -12,6 +12,7 @@ import geopandas as gpd
 import numpy as np
 from aux_functions_strat import configure_logger
 sound_path = work_chaim / 'sounding'
+wang_sound_path = sound_path / 'Wang_radiosonde'
 igra2 = pd.read_fwf(cwd / 'igra2-station-list.txt', header=None)
 igra2.columns = ['station_number', 'lat', 'lon', 'alt', 'name', 'start_year',
                  'end_year', 'number']
@@ -27,6 +28,29 @@ ax = world.plot()
 geo_igra2_eq.plot(ax=ax, column='alt', cmap='Reds', edgecolor='black',
                   legend=True)
 logger = configure_logger(name='strato_sounding')
+
+
+def read_save_wang_radiosonde(path=wang_sound_path):
+    import pandas as pd
+    import xarray as xr
+    da_list = []
+    for file in path.glob('*.dat'):
+        filename = file.as_posix().split('/')[-1]
+        wmo = filename.split('_')[0]
+        hour_str = filename.split('_')[-1].split('.')[0]
+        hour = int(hour_str.replace('Z', ''))
+        print(filename)
+        if wmo.isdigit():
+            df = pd.read_csv(file, header=0, delim_whitespace=True)
+            datetime = pd.to_datetime(
+                dict(year=df.YY, month=df.MM, day='01', hour=hour))
+            df.set_index(datetime, inplace=True)
+            df.drop(['YY', 'MM'], axis=1, inplace=True)
+            df.index.name = 'time'
+            da = df.to_xarray().to_array(dim='var', name=wmo + '_' + hour_str)
+            da_list.append(da)
+    ds = xr.merge([da_list])
+    return ds
 
 
 def read_RATPAC_B_meta_data(path=sound_path):
