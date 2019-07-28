@@ -7,6 +7,7 @@ Created on Thu Apr 11 13:12:22 2019
 """
 from strat_startup import *
 sound_path = work_chaim / 'sounding'
+sean_tropopause_path = work_chaim / 'Sean - tropopause'
 
 
 def read_ascii_randel(path, filename='h2o_all_timeseries_for_corr.dat'):
@@ -157,6 +158,254 @@ def annotate_heatmap(im, data=None, valfmt="{x:.2f}",
             texts.append(text)
 
     return texts
+
+
+def load_cpt_models(lats=[-15, 15], plot=False):
+    """load cold_point temperature from various models"""
+    import xarray as xr
+    import aux_functions_strat as aux
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    def produce_anoms_from_model(path_and_filename, cpt='ctpt', lats=lats,
+                                 time_dim='time'):
+        if 'cfsr' in path_and_filename.as_posix():
+            ds = xr.open_dataset(path_and_filename, decode_times=False)
+            ds[time_dim] = pd.to_datetime(
+                ds[time_dim], origin='julian', unit='D')
+        else:
+            ds = xr.open_dataset(path_and_filename)
+        ds = ds.sortby('lat')
+        da = ds[cpt].sel(lat=slice(lats[0], lats[1])).mean('lat')
+        da_anoms = aux.deseason_xr(da, how='mean')
+        da_anoms = add_times_to_attrs(da_anoms)
+        # replace time with monthly means that start with 1-1 of each month:
+        start_date = pd.to_datetime(
+            da_anoms[time_dim][0].values).strftime('%Y-%m')
+        new_time = pd.date_range(
+            start_date,
+            periods=da_anoms[time_dim].size,
+            freq='MS')
+        da_anoms[time_dim] = new_time
+        return da_anoms
+    # era40:
+    era40_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'era40.tp.monmean.zm.nc')
+    era40_anoms.name = 'era40_cpt_anoms_eq'
+    # era interim:
+    erai_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'erai.tp.monmean.zm.nc')
+    erai_anoms.name = 'era_interim_cpt_anoms_eq'
+    # jra25:
+    jra25_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'jra25.tp.monmean.zm.nc')
+    jra25_anoms.name = 'jra25_cpt_anoms_eq'
+    # jra55:
+    jra55_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'jra55.monmean.zm.nc')
+    jra55_anoms.name = 'jra55_cpt_anoms_eq'
+    # merra:
+    merra_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'merra.tp.monmean.zm.nc')
+    merra_anoms.name = 'merra_cpt_anoms_eq'
+    # merra2:
+    merra2_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'merra2.tp.monmean.zm.nc')
+    merra2_anoms.name = 'merra2_cpt_anoms_eq'
+    # ncep:
+    ncep_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'ncep.tp.monmean.zm.nc')
+    ncep_anoms.name = 'ncep_cpt_anoms_eq'
+    # cfsr:
+    cfsr_anoms = produce_anoms_from_model(
+        sean_tropopause_path / 'cfsr.monmean.zm.nc')
+    cfsr_anoms.name = 'cfsr_cpt_anoms_eq'
+    # merge all:
+    cpt_models = xr.merge([era40_anoms,
+                           erai_anoms,
+                           jra25_anoms,
+                           jra55_anoms,
+                           merra_anoms,
+                           merra2_anoms,
+                           ncep_anoms,
+                           cfsr_anoms])
+    if plot:
+        # fig, ax = plt.subplots(figsize=(11, 11), sharex=True)
+        df = cpt_models.to_dataframe()
+        model_names = [x.split('_')[0] for x in df.columns]
+        df = df[df.index > '1979']
+        for i, col in enumerate(df.columns):
+            df.iloc[:, i] += i*5.0
+        ax = df.plot(legend=False, figsize=(11, 11))
+        ax.grid()
+        ax.legend(model_names, loc='best', fancybox=True, framealpha=0.5) # , bbox_to_anchor=(0.85, 1.05))
+        ax.set_title('Cold-Point-Temperature anoms from various models')
+    return cpt_models
+
+
+def add_times_to_attrs(da, time_dim='time', mm_only=True):
+    import pandas as pd
+    da_no_nans = da.dropna(time_dim)
+    dt_min = da_no_nans.time.values[0]
+    dt_max = da_no_nans.time.values[-1]
+    if mm_only:
+        dt_min_str = pd.to_datetime(dt_min).strftime('%Y-%m')
+        dt_max_str = pd.to_datetime(dt_max).strftime('%Y-%m')
+    else:
+        dt_min_str = pd.to_datetime(dt_min).strftime('%Y-%m-%d')
+        dt_max_str = pd.to_datetime(dt_max).strftime('%Y-%m-%d')
+    da.attrs['first_date'] = dt_min_str
+    da.attrs['last_date'] = dt_max_str
+    return da
+
+
+def load_wv_data(lag=2, plot=False):
+    import xarray as xr
+    import numpy as np
+    import aux_functions_strat as aux
+
+    # first load swoosh:
+    swoosh = xr.open_dataset(work_chaim / 'swoosh_latpress-2.5deg.nc')
+    com_nofill = swoosh.combinedanomh2oq
+    com_nofill = com_nofill.sel(level=slice(83, 81)).squeeze(drop=True)
+    weights = np.cos(np.deg2rad(com_nofill['lat']))
+    swoosh_combined_near_global = (
+        weights.sel(lat=slice(-60, 60)) * com_nofill.sel(lat=slice(-60, 60))).sum('lat') / sum(weights)
+    swoosh_combined_equatorial = (
+        weights.sel(lat=slice(-15, 15)) * com_nofill.sel(lat=slice(-15, 15))).sum('lat') / sum(weights)
+    swoosh_anoms_near_global = aux.deseason_xr(
+        swoosh_combined_near_global, how='mean')
+    swoosh_anoms_near_global = add_times_to_attrs(swoosh_anoms_near_global)
+    swoosh_anoms_near_global.name = 'swoosh_anoms_near_global'
+    swoosh_anoms_equatorial = aux.deseason_xr(
+        swoosh_combined_equatorial, how='mean')
+    swoosh_anoms_equatorial.name = 'swoosh_anoms_equatorial'
+    swoosh_anoms_equatorial = add_times_to_attrs(swoosh_anoms_equatorial)
+    wv_anoms_randel = read_ascii_randel(cwd)
+    wv_anoms_randel.name = 'wv_anoms_near_global_from_randel'
+    wv_anoms_randel = add_times_to_attrs(wv_anoms_randel)
+    wv_anoms = xr.merge([wv_anoms_randel,
+                         swoosh_anoms_near_global,
+                         swoosh_anoms_equatorial])
+    print('loaded wv anoms data...')
+    if plot:
+        df = wv_anoms.to_dataframe()
+        #model_names = ['Randel near global', 'SWOOSH near global',
+        #               'SWOOSH equatorial']
+        for i, col in enumerate(df.columns):
+            df.iloc[:, i] += i*0.45
+        ax = df.plot(legend=True, figsize=(17, 5))
+        ax.grid()
+        ax.grid('on', which='minor', axis='x' )
+        # ax.legend(model_names, loc='best', fancybox=True, framealpha=0.5) # , bbox_to_anchor=(0.85, 1.05))
+        ax.set_title('Water Vapor anoms from Randel and SWOOSH')
+    # now add 2 month lag:
+    if lag is not None:
+        for da in wv_anoms.data_vars.values():
+            new_da = da.shift(time=-1 * lag)
+            new_da.name = da.name + '_' + str(lag) + 'm'
+            wv_anoms[new_da.name] = new_da
+        print('added {} month lag to anom data...'.format(lag))
+    return wv_anoms
+
+
+def gantt_chart(ds):
+    import pandas as pd
+    from matplotlib.pyplot import cm 
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from datetime import datetime, timedelta
+    df = ds.to_dataframe()
+    x2 = df.index[-1].to_pydatetime()
+    x1 = df.index[0].to_pydatetime()
+    y = df.index.astype(int)
+    names = df.columns
+    
+    labs, tickloc, col = [], [], []
+    
+    # create color iterator for multi-color lines in gantt chart
+    color=iter(cm.Dark2(np.linspace(0,1,len(y))))
+    
+    plt.figure(figsize=(8,10))
+    fig, ax = plt.subplots()
+    
+    # generate a line and line properties for each station
+    for i in range(len(y)):
+        c=next(color)
+        
+        plt.hlines(i+1, x1[i], x2[i], label=y[i], color=c, linewidth=2)
+        labs.append(names[i].title()+" ("+str(y[i])+")")
+        tickloc.append(i+1)
+        col.append(c)
+    plt.ylim(0,len(y)+1)
+    plt.yticks(tickloc, labs)
+    
+    # create custom x labels
+    plt.xticks(np.arange(datetime(np.min(x1).year,1,1),np.max(x2)+timedelta(days=365.25),timedelta(days=365.25*5)),rotation=45)
+    plt.xlim(datetime(np.min(x1).year,1,1),np.max(x2)+timedelta(days=365.25))
+    plt.xlabel('Date')
+    plt.ylabel('USGS Official Station Name and Station Id')
+    plt.grid()
+    plt.title('USGS Station Measurement Duration')
+    # color y labels to match lines
+    gytl = plt.gca().get_yticklabels()
+    for i in range(len(gytl)):
+        gytl[i].set_color(col[i])
+    plt.tight_layout()    
+    return
+
+
+def correlate_wv_models_radio(times=['1993', '2017']):
+    from strato_soundings import calc_cold_point_from_sounding
+    import xarray as xr
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    radio_cold3 = calc_cold_point_from_sounding(path=sound_path,
+                                                times=(times[0], times[1]),
+                                                plot=False, return_mean=True)
+    radio_cold3.name = 'radio_cpt_anoms_3_stations_randel'
+    wv_anoms = load_wv_data()
+    cpt_models = load_cpt_models()
+    to_compare = xr.merge([wv_anoms, cpt_models, radio_cold3])
+    to_compare = to_compare.sel(time=slice(times[0], times[1]))
+    corr = to_compare.to_dataframe().corr()
+    fig, ax = plt.subplots(figsize=(11, 11))
+    mask = np.zeros_like(corr)
+    mask[np.triu_indices_from(mask)] = True
+    h = sns.heatmap(corr, mask=mask, annot=True, cmap="YlGn", ax=ax)
+    h.set_xticklabels(
+        h.get_xticklabels(),
+        rotation=45,
+        horizontalalignment='right')
+    plt.subplots_adjust(left=0.30, bottom=0.25, right=0.95)
+#    im, cbar = heatmap(corr.values, corr.index.values, corr.columns, ax=ax,
+#                       cmap="YlGn", cbarlabel="correlation")
+#    texts = annotate_heatmap(im, valfmt="{x:.2f}")
+    ax.hlines([6, 15], xmin=0, xmax=6, color='r')
+    ax.vlines([0, 6], ymin=6, ymax=15, color='r')
+    font = {'family': 'serif',
+            'color': 'darkred',
+            'weight': 'normal',
+            'size': 16,
+            }
+#    for lab, annot in zip(ax.get_yticklabels(), ax.texts):
+#        text =  lab.get_text()
+#        if text == 'radio_cpt_anoms_3_stations_randel': # lets highlight row 2
+#            # set the properties of the ticklabel
+#            # lab.set_weight('bold')
+#            # lab.set_size(20)
+#            lab.set_color('purple')
+#            # set the properties of the heatmap annot
+#            annot.set_weight('bold')
+#            annot.set_color('purple')
+#            # annot.set_size(20)
+    plt.title('Correlation Heatmap of times: {} to {}'.format(
+            times[0], times[1]), fontdict=font)
+#    fig.tight_layout()
+    plt.show()
+    # plt.subplots_adjust(left=0.35, bottom=0.4, right=0.95)
+    return to_compare
 
 
 def get_randel_corr(lats=[-10, 10], times=['1993', '2017']):
