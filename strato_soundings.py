@@ -161,6 +161,7 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     logger.info('fields chosen are: {}'.format(fields))
     logger.info('dates chosen are: {}'.format(times))
     dates = pd.to_datetime(times)
+    dates = [x.date() for x in dates]
     logger.info('getting {} from IGRA2...'.format(station))
     try:
         df, header = IGRAUpperAir.request_data(dates, station, derived=derived)
