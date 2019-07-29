@@ -410,7 +410,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
         fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
-                                         levels=21, col='reg_shifted')
+                                          levels=21, col='reg_shifted')
         for n_regs in range(len(fg.axes[0])):
             rds.isel(reg_shifted=n_regs).level_month_shift.plot.line('r.-',
                                                                      y='level',
@@ -843,6 +843,43 @@ def xr_shift(da, dim_shift_da, dim_to_shift='time'):
     return da_out
 
 
+def get_corr_with_regressor(y_like, regressors_ds):
+    """calculate the pearson correlation coef for y_like(time, samples) data
+    and regressors_ds(time shifted regressors ds)"""
+    import numpy as np
+    import xarray as xr
+    ar = np.empty((y_like.samples.size, len(regressors_ds)))
+    for i, sample in enumerate(y_like.samples):
+        df = y_like.sel(samples=sample).reset_coords(drop=True).to_dataframe()
+        cdf = regressors_ds.reset_coords(drop=True).to_dataframe()
+        cdf[df.columns.values.item()] = df
+        corr = cdf.corr()[y_like.name].values[:-1]
+        ar[i, :] = corr
+    corr_da = xr.DataArray(ar, dims=['samples', 'shifts'])
+    corr_da['samples'] = y_like.samples
+    shifts = [x.split('_')[-1] for x in regressors_ds.data_vars.keys()]
+    shifts[0] = 0
+    shifts = [int(x) for x in shifts]
+    corr_da['shifts'] = shifts
+    corr_da = corr_da.unstack('samples')
+    return corr_da
+
+
+def regressor_shift(time_series_da, time_dim='time', shifts=[1, 12]):
+    """shifts time_series_da(an xarray dataarray with time_dim and values) with
+    shifts, returns a dataset of shifted time series including the oroginal"""
+    import numpy as np
+    import xarray as xr
+    da_list = []
+    da_list.append(time_series_da)
+    for shift in np.arange(shifts[0], shifts[1] + 1):
+        da = time_series_da.shift({time_dim: shift})
+        da.name = time_series_da.name + '_' + str(shift)
+        da_list.append(da)
+    ds = xr.merge(da_list)
+    return ds
+
+
 class ImprovedRegressor(RegressorWrapper):
     def __init__(self, estimator=None, reshapes=None, sample_dim=None,
                  **kwargs):
@@ -1103,7 +1140,7 @@ class ImprovedRegressor(RegressorWrapper):
             suptitle = rds[field].name
             plt_feature = {**plt_kwargs}
             plt_feature.update({'add_colorbar': False, 'levels': 41,
-                                'fig_size': (15, 4),
+                                'figsize': (15, 4),
                                 'extend': 'min', 'col_wrap': colwrap})
             plt_feature.update(kwargs)
             try:
