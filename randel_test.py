@@ -357,6 +357,7 @@ def gantt_chart(ds):
 
 def correlate_wv_models_radio(times=['1993', '2017']):
     from strato_soundings import calc_cold_point_from_sounding
+    from strato_soundings import get_cold_point_from_wang_sounding
     import xarray as xr
     import matplotlib.pyplot as plt
     import seaborn as sns
@@ -365,9 +366,12 @@ def correlate_wv_models_radio(times=['1993', '2017']):
                                                 times=(times[0], times[1]),
                                                 plot=False, return_mean=True)
     radio_cold3.name = 'radio_cpt_anoms_3_stations_randel'
+    ds = get_cold_point_from_wang_sounding()
+    radio_wang = ds.to_array().mean('variable')
+    radio_wang.name = 'radio_cpt_anoms_3_stations_wang'
     wv_anoms = load_wv_data()
     cpt_models = load_cpt_models()
-    to_compare = xr.merge([wv_anoms, cpt_models, radio_cold3])
+    to_compare = xr.merge([wv_anoms, cpt_models, radio_cold3, radio_wang])
     to_compare = to_compare.sel(time=slice(times[0], times[1]))
     corr = to_compare.to_dataframe().corr()
     fig, ax = plt.subplots(figsize=(11, 11))
@@ -382,8 +386,8 @@ def correlate_wv_models_radio(times=['1993', '2017']):
 #    im, cbar = heatmap(corr.values, corr.index.values, corr.columns, ax=ax,
 #                       cmap="YlGn", cbarlabel="correlation")
 #    texts = annotate_heatmap(im, valfmt="{x:.2f}")
-    ax.hlines([6, 15], xmin=0, xmax=6, color='r')
-    ax.vlines([0, 6], ymin=6, ymax=15, color='r')
+    ax.hlines([6, 16], xmin=0, xmax=6, color='r')
+    ax.vlines([0, 6], ymin=6, ymax=16, color='r')
     font = {'family': 'serif',
             'color': 'darkred',
             'weight': 'normal',
