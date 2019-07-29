@@ -7,40 +7,66 @@ Created on Wed Jul  3 13:29:51 2019
 """
 
 from strat_startup import *
-import pandas as pd
-import geopandas as gpd
-import numpy as np
 from aux_functions_strat import configure_logger
 sound_path = work_chaim / 'sounding'
 wang_sound_path = sound_path / 'Wang_radiosonde'
-igra2 = pd.read_fwf(cwd / 'igra2-station-list.txt', header=None)
-igra2.columns = ['station_number', 'lat', 'lon', 'alt', 'name', 'start_year',
-                 'end_year', 'number']
-igra2 = igra2[igra2['lat'] > -90]
-world = gpd.read_file(cwd / 'gis/Countries_WGS84.shp')
-geo_igra2 = gpd.GeoDataFrame(igra2, geometry=gpd.points_from_xy(igra2.lon,
-                                                                igra2.lat),
-                               crs=world.crs)
-geo_igra2_eq = geo_igra2[np.abs(geo_igra2['lat'])<10]
-geo_igra2_eq = geo_igra2_eq[geo_igra2_eq['end_year'] >= 2017]
-geo_igra2_eq = geo_igra2_eq[geo_igra2_eq['start_year'] <= 1993]
-ax = world.plot()
-geo_igra2_eq.plot(ax=ax, column='alt', cmap='Reds', edgecolor='black',
-                  legend=True)
 logger = configure_logger(name='strato_sounding')
 
 
-def read_save_wang_radiosonde(path=wang_sound_path):
+def read_igra2_meta(lat_bound=None, times=None, plot=False):
+    import pandas as pd
+    import geopandas as gpd
+    import numpy as np
+    igra2 = pd.read_fwf(cwd / 'igra2-station-list.txt', header=None)
+    igra2.columns = ['station_number', 'lat', 'lon', 'alt', 'name',
+                     'start_year', 'end_year', 'number']
+    igra2 = igra2[igra2['lat'] > -90]
+    world = gpd.read_file(cwd / 'gis/Countries_WGS84.shp')
+    geo_igra2 = gpd.GeoDataFrame(igra2, geometry=gpd.points_from_xy(igra2.lon,
+                                                                    igra2.lat),
+                                 crs=world.crs)
+    if lat_bound is not None:
+        # set lat_bound=10 to filter just stations between -10 to 10
+        geo_igra2 = geo_igra2[np.abs(geo_igra2['lat']) < lat_bound]
+    if times is not None:
+        # set times=[1993,2017] to filter stations with end_year=2017,
+        # start_year=1993
+        geo_igra2 = geo_igra2[geo_igra2['end_year'] >= times[1]]
+        geo_igra2 = geo_igra2[geo_igra2['start_year'] <= times[0]]
+    if plot:
+        ax = world.plot()
+        geo_igra2.plot(ax=ax, column='alt', cmap='Reds', edgecolor='black',
+                       legend=True)
+    return geo_igra2
+
+
+def get_cold_point_from_wang_sounding(path=wang_sound_path, plot=False,
+                                      times=('1993', '2017')):
+    import xarray as xr
+    wang = xr.open_dataset(path / 'radiosonde_tropopause_wang_dataset.nc')
+    ds = wang.sel(var='Tcp').reset_coords(drop=True)
+    dargo = [x for x in ds.data_vars.values(
+    ) if 'DAGORETTI' in x.attrs['name']][0]
+    majuro = manaus = [
+        x for x in ds.data_vars.values() if 'MAJURO' in x.attrs['name']][0]
+    manaus = [x for x in ds.data_vars.values(
+    ) if 'MANAUS' in x.attrs['name']][0]
+    ds = xr.merge([majuro, dargo, manaus])
+    ds = ds.sel(time=slice(times[0], times[1]))
+    return ds
+
+
+def read_save_wang_radiosonde(path=wang_sound_path, save=False):
     import pandas as pd
     import xarray as xr
     da_list = []
-    for file in path.glob('*.dat'):
+    for file in sorted(path.glob('*.dat')):
         filename = file.as_posix().split('/')[-1]
         wmo = filename.split('_')[0]
         hour_str = filename.split('_')[-1].split('.')[0]
         hour = int(hour_str.replace('Z', ''))
-        print(filename)
         if wmo.isdigit():
+            print(filename)
             df = pd.read_csv(file, header=0, delim_whitespace=True)
             datetime = pd.to_datetime(
                 dict(year=df.YY, month=df.MM, day='01', hour=hour))
@@ -49,7 +75,30 @@ def read_save_wang_radiosonde(path=wang_sound_path):
             df.index.name = 'time'
             da = df.to_xarray().to_array(dim='var', name=wmo + '_' + hour_str)
             da_list.append(da)
-    ds = xr.merge([da_list])
+    # now merge 12Z and 00Z da's inside the list to a single wmo dataset:
+    wmo_set = set([x.name.split('_')[0] for x in da_list])
+    concated_list = []
+    for wmo in wmo_set:
+        to_concat = [x for x in da_list if wmo in x.name.split('_')[0]]
+        da = xr.concat(to_concat, 'time')
+        da.name = wmo
+        concated_list.append(da)
+    # now merge all to dataset:
+    ds = xr.merge(concated_list)
+    # now get igra2 metadata and put it in ds:
+    igra = read_igra2_meta()
+    for da in ds.data_vars.values():
+        wmo = da.name.split('_')[0]
+        station = [x for x in igra.station_number if wmo in x][0]
+        igra_sub = igra[igra.station_number == station]
+        da.attrs['lat'] = igra_sub['lat'].values.item()
+        da.attrs['lon'] = igra_sub['lon'].values.item()
+        da.attrs['alt'] = igra_sub['alt'].values.item()
+        da.attrs['name'] = igra_sub['name'].values.item()
+    if save:
+        savename = 'radiosonde_tropopause_wang_dataset.nc'
+        ds.to_netcdf(path / savename)
+        print('{} saved to {}'.format(savename, path))
     return ds
 
 
@@ -135,7 +184,9 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
         return anom
 
     anom_list = []
-    for file in path.rglob('*.nc'):
+    for file in path.glob('*.nc'):
+        if file.is_dir():
+            continue
         name = file.as_posix().split('/')[-1].split('.')[0]
         if stations is not None:
             if name not in stations:
