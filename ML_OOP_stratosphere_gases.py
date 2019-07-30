@@ -31,12 +31,14 @@ class parameters:
                  species='h2o',
                  time_period=None,
                  area_mean=False,
+                 lat_slice=[-20, 20],
                  original_data_file='swoosh_latpress-2.5deg.nc'):
         self.filing_order = ['data_name', 'field', 'model_name', 'season',
                              'reg_selection', 'special_run']
         self.delimeter = '_'
         self.model_name = model_name
         self.season = season
+        self.lat_slice = lat_slice
         self.time_shift = time_shift
         self.poly_features = poly_features
         self.reg_add_sub = reg_add_sub
@@ -287,7 +289,8 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=None, cv=None,
            regressors=['qbo_1', 'qbo_2', 'ch4'], reg_add_sub=None,
-           time_shift=None, special_run=None, gridsearch=False):
+           time_shift=None, special_run=None, gridsearch=False,
+           lat_slice=[-20, 20]):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -605,6 +608,7 @@ def pre_proccess(params):
     species = params.species
     season = params.season
     shift = params.time_shift
+    lat_slice = params.lat_slice
     # model = params.model
     special_run = params.special_run
     time_period = params.time_period
@@ -640,9 +644,10 @@ def pre_proccess(params):
         da = da.sel(time=slice(*time_period))
     # slice to level and latitude:
     if dname == 'swoosh' or dname == 'era5':
-        da = da.sel(level=slice(100, 1), lat=slice(-20, 20))
+        da = da.sel(level=slice(100, 1), lat=slice(lat_slice[0], lat_slice[1]))
     elif dname == 'merra':
-        da = da.sel(level=slice(100, 0.1), lat=slice(-20, 20))
+        da = da.sel(level=slice(100, 0.1), lat=slice(lat_slice[0],
+                    lat_slice[1]))
     # select seasonality:
     if season != 'all':
         da = da.sel(time=da['time.season'] == season)
