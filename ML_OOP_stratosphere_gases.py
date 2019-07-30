@@ -15,8 +15,9 @@ from warnings import simplefilter
 # ignore all future warnings
 simplefilter(action='ignore', category=FutureWarning)
 
-class parameters:
 
+class Parameters:
+    """a parameters class for stratosphere gases modelling using ML methods"""
     def __init__(self,
                  model_name='LR',
                  season='all',
@@ -327,7 +328,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     arg_dict = locals()
     keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch']
     [arg_dict.pop(key) for key in keys_to_remove]
-    p = parameters(**arg_dict)
+    p = Parameters(**arg_dict)
     # p.from_dict(arg_dict)
     # select model:
     ml_model = p.select_model(model_name, ml_params)
