@@ -30,7 +30,7 @@ class Parameters:
                  time_shift=None,
                  data_name='swoosh',
                  species='h2o',
-                 time_period=None,
+                 time_period=['1994', '2018'],
                  area_mean=False,
                  lat_slice=[-20, 20],
                  original_data_file='swoosh_latpress-2.5deg.nc'):
@@ -640,7 +640,8 @@ def pre_proccess(params):
     regressors = regressors.sel(time=new_time)
     da = da.sel(time=new_time)
     if time_period is not None:
-        print('selecting time period: ' + str(time_period))
+        print('selecting time period: {} to {}'.format(time_period[0],
+              time_period[1]))
         regressors = regressors.sel(time=slice(*time_period))
         da = da.sel(time=slice(*time_period))
     # slice to level and latitude:
@@ -743,6 +744,7 @@ def pre_proccess(params):
     # da stacking:
     dims_to_stack = [x for x in da.dims if x != 'time']
     da = da.stack(samples=dims_to_stack).squeeze()
+    # time slice:
     return reg_stacked, da
 
 
@@ -885,6 +887,39 @@ def regressor_shift(time_series_da, time_dim='time', shifts=[1, 12]):
     ds = xr.merge(da_list)
     return ds
 
+
+def correlate_da_with_lag(return_max=None, return_argmax=None,
+                          times=['1994', '2018'], lat_slice=[-60, 60],
+                          regress_out=['qbo_1, qbo_2']):
+    from strato_soundings import calc_cold_point_from_sounding
+    radio_cold3 = calc_cold_point_from_sounding(path=sound_path,
+                                                times=(times[0], times[1]),
+                                                plot=False, return_mean=True)
+    radio_cold3.name = 'radio_cpt_anoms_3_stations_randel'
+    radio_cold3 = radio_cold3.sel(time=slice(times[0], times[1]))
+    radio3_ds = regressor_shift(radio_cold3, shifts=[1, 25])
+    if regress_out is not None:
+        rds = run_ML(species='h2o', swoosh_field='combinedanomfillanom',
+                     model_name='LR', time_period=times,
+                     regressors=['qbo_1', 'qbo_2'], lat_slice=lat_slice)
+        resid = rds.results_.resid
+        dims_to_stack = [x for x in resid.dims if x != 'time']
+        y = resid.stack(samples=dims_to_stack).squeeze()
+    else:
+        p = Parameters()
+        p.from_dict({'lat_slice': lat_slice})
+        # p.from_dict(arg_dict)
+        # pre proccess:
+        X, y = pre_proccess(p)
+        y = y.sel(time=slice(times[0], times[1]))
+    corr_da = get_corr_with_regressor(y, radio3_ds)
+    corr_da_max = corr_da.max(dim='shifts')
+    corr_da_argmax = corr_da.argmax(dim='shifts')
+    if return_max is not None:
+        return corr_da_max
+    if return_argmax is not None:
+        return corr_da_argmax
+    return corr_da
 
 class ImprovedRegressor(RegressorWrapper):
     def __init__(self, estimator=None, reshapes=None, sample_dim=None,
