@@ -890,14 +890,14 @@ def regressor_shift(time_series_da, time_dim='time', shifts=[1, 12]):
 
 def correlate_da_with_lag(return_max=None, return_argmax=None,
                           times=['1994', '2018'], lat_slice=[-60, 60],
-                          regress_out=['qbo_1, qbo_2']):
+                          regress_out=['qbo_1, qbo_2'], max_lag=25):
     from strato_soundings import calc_cold_point_from_sounding
     radio_cold3 = calc_cold_point_from_sounding(path=sound_path,
                                                 times=(times[0], times[1]),
                                                 plot=False, return_mean=True)
     radio_cold3.name = 'radio_cpt_anoms_3_stations_randel'
     radio_cold3 = radio_cold3.sel(time=slice(times[0], times[1]))
-    radio3_ds = regressor_shift(radio_cold3, shifts=[1, 25])
+    radio3_ds = regressor_shift(radio_cold3, shifts=[1, max_lag])
     if regress_out is not None:
         rds = run_ML(species='h2o', swoosh_field='combinedanomfillanom',
                      model_name='LR', time_period=times,
