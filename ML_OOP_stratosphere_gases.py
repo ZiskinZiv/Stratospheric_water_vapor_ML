@@ -646,6 +646,8 @@ def pre_proccess(params):
         da = da.sel(time=slice(*time_period))
     # slice to level and latitude:
     if dname == 'swoosh' or dname == 'era5':
+        print('selecting latitude area: {} to {}'.format(lat_slice[0],
+              lat_slice[1]))
         da = da.sel(level=slice(100, 1), lat=slice(lat_slice[0], lat_slice[1]))
     elif dname == 'merra':
         da = da.sel(level=slice(100, 0.1), lat=slice(lat_slice[0],
@@ -892,26 +894,32 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
                           times=['1994', '2018'], lat_slice=[-60, 60],
                           regress_out=['qbo_1, qbo_2'], max_lag=25):
     from strato_soundings import calc_cold_point_from_sounding
+    from sklearn.linear_model import LinearRegression
     radio_cold3 = calc_cold_point_from_sounding(path=sound_path,
                                                 times=(times[0], times[1]),
                                                 plot=False, return_mean=True)
+    p = Parameters()
+    p.from_dict({'lat_slice': lat_slice, 'time_period': times})
+    X, y = pre_proccess(p)
     radio_cold3.name = 'radio_cpt_anoms_3_stations_randel'
     radio_cold3 = radio_cold3.sel(time=slice(times[0], times[1]))
     radio3_ds = regressor_shift(radio_cold3, shifts=[1, max_lag])
     if regress_out is not None:
+        # first regress_out from wv anoms:
         rds = run_ML(species='h2o', swoosh_field='combinedanomfillanom',
                      model_name='LR', time_period=times,
                      regressors=['qbo_1', 'qbo_2'], lat_slice=lat_slice)
         resid = rds.results_.resid
         dims_to_stack = [x for x in resid.dims if x != 'time']
         y = resid.stack(samples=dims_to_stack).squeeze()
+        # now, regress out of radio3:
+        X = X.sel(regressors=regress_out)
+        lr = LinearRegression()
+        lr.fit(X, radio_cold3)
+        radio_cold3_regressed_out = radio_cold3 - lr.predict(X)
+        radio3_ds = regressor_shift(radio_cold3_regressed_out, shifts=[1, 25])
     else:
-        p = Parameters()
-        p.from_dict({'lat_slice': lat_slice})
-        # p.from_dict(arg_dict)
-        # pre proccess:
-        X, y = pre_proccess(p)
-        y = y.sel(time=slice(times[0], times[1]))
+        radio3_ds = regressor_shift(radio_cold3, shifts=[1, 25])
     corr_da = get_corr_with_regressor(y, radio3_ds)
     corr_da_max = corr_da.max(dim='shifts')
     corr_da_argmax = corr_da.argmax(dim='shifts')
