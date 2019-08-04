@@ -8,7 +8,7 @@ Created on Thu Jul  4 13:55:37 2019
 
 from pathlib import Path
 from strato_soundings import siphon_igra2_to_xarray
-from strat_startup import *
+from strat_paths import work_chaim
 # sound_path = Path('/home/ziskin/Work_Files/Chaim_Stratosphere_Data/sounding')
 sound_path = work_chaim / 'sounding'
 cwd = Path().cwd()
