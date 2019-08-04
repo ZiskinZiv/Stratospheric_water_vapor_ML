@@ -5,7 +5,7 @@ Created on Thu Apr 11 13:12:22 2019
 
 @author: shlomi
 """
-from strat_startup import *
+from strat_paths import work_chaim
 sound_path = work_chaim / 'sounding'
 sean_tropopause_path = work_chaim / 'Sean - tropopause'
 
