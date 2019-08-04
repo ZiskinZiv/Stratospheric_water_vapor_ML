@@ -8,7 +8,8 @@ Created on Sun Mar 10 13:20:30 2019
 # TODO: build GridSearchCV support directley like ultioutput regressors
 # for various models
 
-from strat_startup import *
+from strat_paths import work_chaim
+from strat_paths import adams_path
 from sklearn_xarray import RegressorWrapper
 # import warnings filter
 from warnings import simplefilter
