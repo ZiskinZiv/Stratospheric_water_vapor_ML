@@ -6,7 +6,8 @@ Created on Wed Jul  3 13:29:51 2019
 @author: shlomi
 """
 
-from strat_startup import *
+from strat_paths import work_chaim
+from strat_paths import cwd
 from aux_functions_strat import configure_logger
 sound_path = work_chaim / 'sounding'
 wang_sound_path = sound_path / 'Wang_radiosonde'
@@ -149,20 +150,27 @@ def read_RATPAC_B_data(path=sound_path):
     return ds
 
 
-def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
-                                  plot=True, return_mean=True, stations=None):
+def calc_cold_point_from_sounding(path=sound_path, times=['1993', '2017'],
+                                  plot=True, return_mean=True,
+                                  return_anom=True):
     import xarray as xr
 #     import seaborn as sns
     from aux_functions_strat import deseason_xr
 
-    def anom_one_station(file_obj, name):
+    def return_one_station(file_obj, name, times):
         print('proccessing station {}:'.format(name))
         station = xr.open_dataset(file)
+        if times is None:
+            first = station['time'].min().dt.strftime('%Y-%m')
+            last = station['time'].max().dt.strftime('%Y-%m')
+            times = [first, last]
         station = station.sel(time=slice(times[0], times[1]))
         # take Majuro station data after 2011 only nighttime:
         if 'RMM00091376' in name:
             print('taking just the midnight soundings after 2011 for {}'.format(name))
-            station_after_2011 = station.sel(time=slice('2011', times[1])).where(station['time.hour']==00)
+            station_after_2011 = station.sel(
+                    time=slice('2011', times[1])).where(
+                            station['time.hour'] == 00)
             station_before_2011 = station.sel(time=slice(times[0], '2010'))
             station = xr.concat([station_before_2011, station_after_2011],
                                 'time')
@@ -172,27 +180,27 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
                 dim='point')
         # take the min and ensure it is below -72 degC:
         cold = station.temperature.min('point')
-        cold = cold.where(cold<-72)
+        cold = cold.where(cold < -72)
         cold.attrs = station.attrs
 
         try:
             cold = cold.resample(time='MS').mean()
         except IndexError:
             return
-        anom = deseason_xr(cold, how='mean')
-        anom.name = name
-        return anom
+        if return_anom:
+            anom = deseason_xr(cold, how='mean')
+            anom.name = name
+            return anom
+        cold.name = name
+        return cold
 
-    anom_list = []
+    da_list = []
     for file in path.glob('*.nc'):
         if file.is_dir():
             continue
         name = file.as_posix().split('/')[-1].split('.')[0]
-        if stations is not None:
-            if name not in stations:
-                continue
-        anom = anom_one_station(file, name)
-        anom_list.append(anom)
+        da = return_one_station(file, name, times)
+        da_list.append(da)
 #        argmin_point = station.temperature.argmin(dim='point').values
 #        p_points = []
 #        for i, argmin in enumerate(argmin_point):
@@ -200,9 +208,12 @@ def calc_cold_point_from_sounding(path=sound_path, times=('1993', '2017'),
 #            p_points.append(p)
 #        sns.distplot(p_points, bins=100, color='c',
 #                     label='pressure_cold_points_' + name)
-    ds = xr.merge(anom_list)
+    ds = xr.merge(da_list)
     da = ds.to_array(dim='name')
-    da.name = 'radiosonde_cold_point_anomalies'
+    if return_anom:
+        da.name = 'radiosonde_cold_point_anomalies'
+    else:
+        da.name = 'radiosonde_cold_point'
 #     mean_da = da.where(np.abs(da) < 3).mean('name')
     mean_da = da.mean('name')
     if plot:
