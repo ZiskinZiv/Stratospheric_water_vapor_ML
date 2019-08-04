@@ -389,15 +389,18 @@ def get_RI_reg_combinations(dataset):
     return ds_list
 
 
-def overlap_time_xr(*args):
+def overlap_time_xr(*args, time_dim='time'):
     """return the intersection of datetime objects from time field in *args"""
     # caution: for each arg input is xarray with dim:time
     time_list = []
-    for ts in args:
-        time_list.append(ts.time.values)
+    try:
+        for ts in args:
+            time_list.append(ts[time_dim].values)
+    except KeyError:
+        print('"{}" dim should be at all args...'.format(time_dim))
     intersection = set.intersection(*map(set, time_list))
     intr = sorted(list(intersection))
-    return intr 
+    return intr
 
 
 def xr_order(xrr, dims_order=['time', 'level', 'lat', 'lon']):
