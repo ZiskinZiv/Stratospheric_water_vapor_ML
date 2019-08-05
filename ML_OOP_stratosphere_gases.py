@@ -10,6 +10,7 @@ Created on Sun Mar 10 13:20:30 2019
 
 from strat_paths import work_chaim
 from strat_paths import adams_path
+sound_path = work_chaim / 'sounding'
 from sklearn_xarray import RegressorWrapper
 # import warnings filter
 from warnings import simplefilter
@@ -22,13 +23,13 @@ class Parameters:
     def __init__(self,
                  model_name='LR',
                  season='all',
-                 regressors_file='Regressors.nc',
+#                 regressors_file='Regressors.nc',
                  swoosh_field='combinedanomfillanom',
                  regressors=None,   # default None means all regressors
-                 reg_add_sub=None,
+#                 reg_add_sub=None,
                  poly_features=None,
                  special_run=None,
-                 time_shift=None,
+                 reg_time_shift=None,
                  data_name='swoosh',
                  species='h2o',
                  time_period=['1994', '2018'],
@@ -41,12 +42,12 @@ class Parameters:
         self.model_name = model_name
         self.season = season
         self.lat_slice = lat_slice
-        self.time_shift = time_shift
+        self.reg_time_shift = reg_time_shift
         self.poly_features = poly_features
-        self.reg_add_sub = reg_add_sub
+#        self.reg_add_sub = reg_add_sub
         self.regressors = regressors
         self.special_run = special_run
-        self.regressors_file = regressors_file
+#        self.regressors_file = regressors_file
 #        self.sw_field_list = ['combinedanomfillanom', 'combinedanomfill',
 #                              'combinedanom', 'combinedeqfillanom',
 #                              'combinedeqfill', 'combinedeqfillseas',
@@ -60,7 +61,7 @@ class Parameters:
         self.original_data_file = original_data_file  # original data filename (in work_path)
         self.work_path = work_chaim
         self.cluster_path = adams_path
- 
+
     # update attrs from dict containing keys as attrs and vals as attrs vals
     # to be updated
 
@@ -79,13 +80,16 @@ class Parameters:
                                              end="  ")
             print('')
 
-    def load(self, name='regressors'):
-        import xarray as xr
-        if name == 'regressors':
-            data = xr.open_dataset(self.regressors_file)
-        elif name == 'original':
-            data = xr.open_dataset(self.work_path + self.original_data_file)
-        return data
+#    def load(self, name='regressors'):
+#        import xarray as xr
+#        if name == 'regressors':
+#            data = xr.open_dataset(self.regressors_file)
+#        elif name == 'original':
+#            data = xr.open_dataset(self.work_path + self.original_data_file)
+#        return data
+    def load_regressors(self):
+        from make_regressors import load_all_regressors
+        return load_all_regressors()
 
     def select_model(self, model_name=None, ml_params=None, gridsearch=False):
         # pick ml model from ML_models class dict:
@@ -202,16 +206,20 @@ class ML_Switcher(object):
 #        if self.model == 'Invalid':
 #            raise KeyError('WRONG MODEL NAME!!')
 #        return self.model
+
+
 def run_grid_multi(reg_stacked, da_stacked, params):
     """run one grid_search_cv on a multioutputregressors(model)"""
-    import xarray as xrml_model
+    import xarray as xr
     from aux_functions_strat import xr_order
     params.grid_search.fit(reg_stacked, da_stacked)
     rds = xr.Dataset()
     rds['cv_results'] = process_gridsearch_results(params.grid_search)
     rds['best_score'] = xr.DataArray(params.grid_search.best_score_)
-    rds['best_params'] = xr.DataArray(list(params.grid_search.best_params_.values()),
-                                      dims=['cv_params'])
+    rds['best_params'] = xr.DataArray(
+        list(
+            params.grid_search.best_params_.values()),
+        dims=['cv_params'])
     rds['cv_params'] = list(params.grid_search.param_grid.keys())
     rds.attrs['scoring_for_best'] = params.grid_search.refit
     # predict = xr.DataArray([est.predict(reg_stacked) for est in
@@ -289,10 +297,11 @@ def process_gridsearch_results(GridSearchCV):
 
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
-           poly_features=None, time_period=None, cv=None,
-           regressors=['qbo_1', 'qbo_2', 'ch4'], reg_add_sub=None,
-           time_shift=None, special_run=None, gridsearch=False,
-           lat_slice=[-20, 20]):
+           poly_features=None, time_period=['1994', '2018'], cv=None,
+           regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
+           reg_time_shift={'radio_cold_no_qbo': [1, 36]},
+           special_run=None, gridsearch=False,
+           lat_slice=[-60, 60]):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -595,160 +604,256 @@ def pre_proccess(params):
     time_period is a slicer of the specific period. lag is inside params and
     shifting the data with minus"""
     import aux_functions_strat as aux
-    # import numpy as np
     import xarray as xr
-    import os
-    path = os.getcwd() + '/regressors/'
-    reg_file = params.regressors_file
     reg_list = params.regressors
-    reg_add_sub = params.reg_add_sub
-    poly = params.poly_features
-    # load X i.e., regressors
-    regressors = xr.open_dataset(path + reg_file)
-    # unpack params to vars
-    dname = params.data_name
     species = params.species
     season = params.season
-    shift = params.time_shift
     lat_slice = params.lat_slice
-    # model = params.model
-    special_run = params.special_run
     time_period = params.time_period
     area_mean = params.area_mean
-#    if special_run == 'mask-pinatubo':
-#        # mask vol: drop the time dates:
-#        # '1991-07-01' to '1996-03-01'
-#        date_range = pd.date_range('1991-07-01', '1996-03-01', freq='MS')
-#        regressors = regressors.drop(date_range, 'time')
-#        aux.text_yellow('Dropped ~five years from regressors due to\
-#                        pinatubo...')
     path = params.work_path
-    if params.run_on_cluster:
-        path = '/data11/ziskin/'
-    # load y i.e., swoosh or era5
-    if dname == 'era5':
-        nc_file = 'ERA5_' + species + '_all.nc'
-        da = xr.open_dataarray(path + nc_file)
-    elif dname == 'merra':
-        nc_file = 'MERRA_' + species + '.nc'
-        da = xr.open_dataarray(path + nc_file)
-    elif dname == 'swoosh':
-        ds = xr.open_dataset(path / params.original_data_file)
-        field = params.swoosh_field + species + 'q'
-        da = ds[field]
+    # dict of {regressors: [1, 36]}
+    reg_time_shift = params.reg_time_shift
+    # load all of the regressors:
+    regressors = params.load_regressors()
+    # selecting specific regressors:
+    if reg_list is not None:  # it is the default
+        # convert str to list:
+        if isinstance(reg_list, str):
+            reg_list = reg_list.split(' ')
+        try:
+            regressors = regressors[reg_list]
+        except KeyError:
+            raise KeyError('The regressors selection cannot find {}'.format(reg_list))
+    # selecting time period:
+    if time_period is not None:
+        print('selecting regressors time period:{} to {}'.format(*time_period))
+        regressors = regressors.sel(time=slice(*time_period))
+    # anomlizing them:
+    for reg in regressors.data_vars.keys():
+        if reg == 'ch4':
+            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
+        elif reg == 'radio_cold' or reg == 'radio_cold_no_qbo':
+            regressors[reg] = aux.deseason_xr(regressors[reg], how='mean')
+        elif 'qbo_' in reg:
+            regressors[reg] = aux.normalize_xr(regressors[reg], norm=1)
+    # regressing one out of the other if neccesary:
+    # just did it by specifically regressed out and saved as _index.nc'
+    # making lags of some of the regressors (e.g, cold point):
+    if reg_time_shift is not None:
+        ds_list = []
+        for reg, shifts in reg_time_shift.items():
+            reg_shift_ds = regressor_shift(regressors[reg],
+                                           including_lag0=False,
+                                           shifts=shifts)
+            ds_list.append(reg_shift_ds)
+        ds = xr.merge(ds_list)
+        regressors = xr.merge([regressors, ds])
+        # now drop nan bc of the shifts:
+        regressors = regressors.dropna('time')
+    # load swoosh from work dir:
+    ds = xr.load_dataset(path / params.original_data_file)
+    field = params.swoosh_field + species + 'q'
+    da = ds[field]
+    # selecting time period:
+    if time_period is not None:
+        print('selecting data time period:{} to {}'.format(*time_period))
+        da = da.sel(time=slice(*time_period))
     # align time between y and X:
     new_time = aux.overlap_time_xr(da, regressors.to_array())
     regressors = regressors.sel(time=new_time)
     da = da.sel(time=new_time)
-    if time_period is not None:
-        print('selecting time period: {} to {}'.format(time_period[0],
-              time_period[1]))
-        regressors = regressors.sel(time=slice(*time_period))
-        da = da.sel(time=slice(*time_period))
     # slice to level and latitude:
-    if dname == 'swoosh' or dname == 'era5':
-        print('selecting latitude area: {} to {}'.format(lat_slice[0],
-              lat_slice[1]))
-        da = da.sel(level=slice(100, 1), lat=slice(lat_slice[0], lat_slice[1]))
-    elif dname == 'merra':
-        da = da.sel(level=slice(100, 0.1), lat=slice(lat_slice[0],
-                    lat_slice[1]))
+    print('selecting latitude area: {} to {}'.format(*lat_slice))
+    da = da.sel(level=slice(100, 1), lat=slice(*lat_slice))
     # select seasonality:
     if season != 'all':
+        print('selecting season: {}'.format(season))
         da = da.sel(time=da['time.season'] == season)
         regressors = regressors.sel(time=regressors['time.season'] == season)
     # area_mean:
     if area_mean:
+        print('selecting data area mean')
         da = aux.xr_weighted_mean(da)
-    # normalize X
-    regressors = regressors.apply(aux.normalize_xr, norm=1,
-                                  keep_attrs=True, verbose=False)
     # remove nans from y:
     da = aux.remove_nan_xr(da, just_geo=False)
-    # regressors = regressors.sel(time=da.time)
-    if 'seas' in field:
-        how = 'mean'
-    else:
-        how = 'std'
     # deseason y
     if season != 'all':
-        da = aux.deseason_xr(da, how=how, season=season, verbose=False)
+        da = aux.deseason_xr(da, how='mean', season=season, verbose=False)
     else:
-        da = aux.deseason_xr(da, how=how, verbose=False)
-    # shift according to scheme
-#    if params.shift is not None:
-#        shift_da = create_shift_da(sel=params.shift)
-#        da = xr_shift(da, shift_da, 'time')
-#        da = da.dropna('time')
-#        regressors = regressors.sel(time=da.tioptimize_time_shiftme)
+        da = aux.deseason_xr(da, how='mean', verbose=False)
     # saving attrs:
     attrs = [da[dim].attrs for dim in da.dims]
     da.attrs['coords_attrs'] = dict(zip(da.dims, attrs))
     # stacking reg:
     reg_names = [x for x in regressors.data_vars.keys()]
     reg_stacked = regressors[reg_names].to_array(dim='regressors').T
-    # reg_select behaviour:
-    reg_select = [x for x in reg_stacked.regressors.values]
-    if reg_list is not None:  # it is the default
-        # convert str to list:
-        if isinstance(regressors, str):
-            regressors = regressors.split(' ')
-        # select regressors:
-        reg_select = [x for x in reg_list]
-    else:
-        reg_select = [x for x in reg_stacked.regressors.values]
-    # if i want to add or substract regressor:
-    if reg_add_sub is not None:
-        if 'add' in reg_add_sub.keys():
-            to_add = reg_add_sub['add']
-            if isinstance(to_add, str):
-                to_add = [to_add]
-            reg_select = list(set(reg_select + to_add))
-        if 'sub' in reg_add_sub.keys():
-            to_sub = reg_add_sub['add']
-            if isinstance(to_sub, str):
-                to_sub = [to_sub]
-            reg_select = list(set(reg_select).difference(set(to_sub)))
-#        # make sure that reg_add_sub is 2-tuple and consist or str:
-#        if (isinstance(reg_add_sub, tuple) and
-#                len(reg_add_sub) == 2):
-#            reg_add = reg_add_sub[0]
-#            reg_sub = reg_add_sub[1]
-#            if reg_add is not None and isinstance(reg_add, str):
-#                reg_select = [x for x in reg_select if x != reg_add]
-#                reg_select.append(reg_add)
-#            if reg_sub is not None and isinstance(reg_sub, str):
-#                reg_select = [x for x in reg_select if x != reg_sub]
-#        else:
-#            raise ValueError("Expected reg_add_sub as an 2-tuple of string"
-#                             ". Got %s." % reg_add_sub)
-    try:
-        reg_stacked = reg_stacked.sel({'regressors': reg_select})
-    except KeyError:
-        raise KeyError('The regressor selection cannot find %s' % reg_select)
-    # poly features:
-    if poly is not None:
-        reg_stacked = poly_features(reg_stacked, degree=poly)
-    # shift all da shift months:
-    if shift is not None:
-        da = da.shift({'time': shift})
-        da = da.dropna('time')
-        reg_stacked = reg_stacked.sel(time=da.time)
-    # special run case:
-    if special_run is not None and 'level_shift' in special_run.keys():
-        scheme = special_run['level_shift']
-        print('Running with special mode: level_shift , ' +
-              'with scheme: {}'.format(scheme))
-        shift_da = create_shift_da(path=params.work_path,
-                                   shift_scheme=scheme)
-        da = xr_shift(da, shift_da, 'time')
-        da = da.dropna('time')
-        reg_stacked = reg_stacked.sel(time=da.time)
     # da stacking:
     dims_to_stack = [x for x in da.dims if x != 'time']
     da = da.stack(samples=dims_to_stack).squeeze()
     # time slice:
     return reg_stacked, da
+
+
+#def pre_proccess(params):
+#    """ pre proccess the data, area_mean is reducing the data to level-time,
+#    time_period is a slicer of the specific period. lag is inside params and
+#    shifting the data with minus"""
+#    import aux_functions_strat as aux
+#    # import numpy as np
+#    import xarray as xr
+#    import os
+#    path = os.getcwd() + '/regressors/'
+#    reg_file = params.regressors_file
+#    reg_list = params.regressors
+#    reg_add_sub = params.reg_add_sub
+#    poly = params.poly_features
+#    # load X i.e., regressors
+#    regressors = xr.open_dataset(path + reg_file)
+#    # unpack params to vars
+#    dname = params.data_name
+#    species = params.species
+#    season = params.season
+#    shift = params.time_shift
+#    lat_slice = params.lat_slice
+#    # model = params.model
+#    special_run = params.special_run
+#    time_period = params.time_period
+#    area_mean = params.area_mean
+##    if special_run == 'mask-pinatubo':
+##        # mask vol: drop the time dates:
+##        # '1991-07-01' to '1996-03-01'
+##        date_range = pd.date_range('1991-07-01', '1996-03-01', freq='MS')
+##        regressors = regressors.drop(date_range, 'time')
+##        aux.text_yellow('Dropped ~five years from regressors due to\
+##                        pinatubo...')
+#    path = params.work_path
+#    if params.run_on_cluster:
+#        path = '/data11/ziskin/'
+#    # load y i.e., swoosh or era5
+#    if dname == 'era5':
+#        nc_file = 'ERA5_' + species + '_all.nc'
+#        da = xr.open_dataarray(path + nc_file)
+#    elif dname == 'merra':
+#        nc_file = 'MERRA_' + species + '.nc'
+#        da = xr.open_dataarray(path + nc_file)
+#    elif dname == 'swoosh':
+#        ds = xr.open_dataset(path / params.original_data_file)
+#        field = params.swoosh_field + species + 'q'
+#        da = ds[field]
+#    # align time between y and X:
+#    new_time = aux.overlap_time_xr(da, regressors.to_array())
+#    regressors = regressors.sel(time=new_time)
+#    da = da.sel(time=new_time)
+#    if time_period is not None:
+#        print('selecting time period: {} to {}'.format(time_period[0],
+#              time_period[1]))
+#        regressors = regressors.sel(time=slice(*time_period))
+#        da = da.sel(time=slice(*time_period))
+#    # slice to level and latitude:
+#    if dname == 'swoosh' or dname == 'era5':
+#        print('selecting latitude area: {} to {}'.format(lat_slice[0],
+#              lat_slice[1]))
+#        da = da.sel(level=slice(100, 1), lat=slice(lat_slice[0], lat_slice[1]))
+#    elif dname == 'merra':
+#        da = da.sel(level=slice(100, 0.1), lat=slice(lat_slice[0],
+#                    lat_slice[1]))
+#    # select seasonality:
+#    if season != 'all':
+#        da = da.sel(time=da['time.season'] == season)
+#        regressors = regressors.sel(time=regressors['time.season'] == season)
+#    # area_mean:
+#    if area_mean:
+#        da = aux.xr_weighted_mean(da)
+#    # normalize X
+#    regressors = regressors.apply(aux.normalize_xr, norm=1,
+#                                  keep_attrs=True, verbose=False)
+#    # remove nans from y:
+#    da = aux.remove_nan_xr(da, just_geo=False)
+#    # regressors = regressors.sel(time=da.time)
+#    if 'seas' in field:
+#        how = 'mean'
+#    else:
+#        how = 'std'
+#    # deseason y
+#    if season != 'all':
+#        da = aux.deseason_xr(da, how=how, season=season, verbose=False)
+#    else:
+#        da = aux.deseason_xr(da, how=how, verbose=False)
+#    # shift according to scheme
+##    if params.shift is not None:
+##        shift_da = create_shift_da(sel=params.shift)
+##        da = xr_shift(da, shift_da, 'time')
+##        da = da.dropna('time')
+##        regressors = regressors.sel(time=da.tioptimize_time_shiftme)
+#    # saving attrs:
+#    attrs = [da[dim].attrs for dim in da.dims]
+#    da.attrs['coords_attrs'] = dict(zip(da.dims, attrs))
+#    # stacking reg:
+#    reg_names = [x for x in regressors.data_vars.keys()]
+#    reg_stacked = regressors[reg_names].to_array(dim='regressors').T
+#    # reg_select behaviour:
+#    reg_select = [x for x in reg_stacked.regressors.values]
+#    if reg_list is not None:  # it is the default
+#        # convert str to list:
+#        if isinstance(regressors, str):
+#            regressors = regressors.split(' ')
+#        # select regressors:
+#        reg_select = [x for x in reg_list]
+#    else:
+#        reg_select = [x for x in reg_stacked.regressors.values]
+#    # if i want to add or substract regressor:
+#    if reg_add_sub is not None:
+#        if 'add' in reg_add_sub.keys():
+#            to_add = reg_add_sub['add']
+#            if isinstance(to_add, str):
+#                to_add = [to_add]
+#            reg_select = list(set(reg_select + to_add))
+#        if 'sub' in reg_add_sub.keys():
+#            to_sub = reg_add_sub['add']
+#            if isinstance(to_sub, str):
+#                to_sub = [to_sub]
+#            reg_select = list(set(reg_select).difference(set(to_sub)))
+##        # make sure that reg_add_sub is 2-tuple and consist or str:
+##        if (isinstance(reg_add_sub, tuple) and
+##                len(reg_add_sub) == 2):
+##            reg_add = reg_add_sub[0]
+##            reg_sub = reg_add_sub[1]
+##            if reg_add is not None and isinstance(reg_add, str):
+##                reg_select = [x for x in reg_select if x != reg_add]
+##                reg_select.append(reg_add)
+##            if reg_sub is not None and isinstance(reg_sub, str):
+##                reg_select = [x for x in reg_select if x != reg_sub]
+##        else:
+##            raise ValueError("Expected reg_add_sub as an 2-tuple of string"
+##                             ". Got %s." % reg_add_sub)
+#    try:
+#        reg_stacked = reg_stacked.sel({'regressors': reg_select})
+#    except KeyError:
+#        raise KeyError('The regressor selection cannot find %s' % reg_select)
+#    # poly features:
+#    if poly is not None:
+#        reg_stacked = poly_features(reg_stacked, degree=poly)
+#    # shift all da shift months:
+#    if shift is not None:
+#        da = da.shift({'time': shift})
+#        da = da.dropna('time')
+#        reg_stacked = reg_stacked.sel(time=da.time)
+#    # special run case:
+#    if special_run is not None and 'level_shift' in special_run.keys():
+#        scheme = special_run['level_shift']
+#        print('Running with special mode: level_shift , ' +
+#              'with scheme: {}'.format(scheme))
+#        shift_da = create_shift_da(path=params.work_path,
+#                                   shift_scheme=scheme)
+#        da = xr_shift(da, shift_da, 'time')
+#        da = da.dropna('time')
+#        reg_stacked = reg_stacked.sel(time=da.time)
+#    # da stacking:
+#    dims_to_stack = [x for x in da.dims if x != 'time']
+#    da = da.stack(samples=dims_to_stack).squeeze()
+#    # time slice:
+#    return reg_stacked, da
 
 
 def reg_shift(X, shift_dict):
@@ -876,16 +981,18 @@ def get_corr_with_regressor(y_like, regressors_ds):
     return corr_da
 
 
-def regressor_shift(time_series_da, time_dim='time', shifts=[1, 12]):
+def regressor_shift(time_series_da, time_dim='time', shifts=[1, 12],
+                    including_lag0=True):
     """shifts time_series_da(an xarray dataarray with time_dim and values) with
     shifts, returns a dataset of shifted time series including the oroginal"""
     import numpy as np
     import xarray as xr
     da_list = []
-    da_list.append(time_series_da)
+    if including_lag0:
+        da_list.append(time_series_da)
     for shift in np.arange(shifts[0], shifts[1] + 1):
         da = time_series_da.shift({time_dim: shift})
-        da.name = time_series_da.name + '_' + str(shift)
+        da.name = time_series_da.name + '_lag_' + str(shift)
         da_list.append(da)
     ds = xr.merge(da_list)
     return ds
@@ -929,6 +1036,7 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
     if return_argmax is not None:
         return corr_da_argmax
     return corr_da
+
 
 class ImprovedRegressor(RegressorWrapper):
     def __init__(self, estimator=None, reshapes=None, sample_dim=None,
@@ -1085,7 +1193,7 @@ class ImprovedRegressor(RegressorWrapper):
         corr.attrs['description'] = 'np.corrcoef on each regressor and geo point'
         return corr
 
-    def plot_like(self, field, **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
+    def plot_like(self, field, tol=0.0, **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
         from matplotlib.ticker import ScalarFormatter
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
@@ -1182,7 +1290,7 @@ class ImprovedRegressor(RegressorWrapper):
             import xarray as xr
             fdim = rds.attrs['feature_dim']
             flist = [x for x in rds[fdim].values if
-                        xr.ufuncs.fabs(rds[field].sel({fdim: x})).mean() > 0]
+                        xr.ufuncs.fabs(rds[field].sel({fdim: x})).mean() > tol]
             if rds[fdim].sel({fdim: flist}).size > 6:
                 colwrap = 6
             else:
