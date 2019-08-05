@@ -291,8 +291,7 @@ def predict_xr(result_ds, regressors):
     import aux_functions_strat as aux
     rds = result_ds
     regressors = regressors.sel(time=rds.time)  # slice
-    regressors = regressors.apply(aux.normalize_xr, norm=1, verbose=False,
-                                  keep_attrs=True)  # normalize
+    regressors = regressors.apply(aux.normalize_xr, norm=1, verbose=False)  # normalize
     reg_dict = dict(zip(rds.regressors.values, regressors.data_vars.values()))
     # make sure that all the regressors names are linking to their respective dataarrays
     for key, value in reg_dict.items():
