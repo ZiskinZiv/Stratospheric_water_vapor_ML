@@ -47,6 +47,7 @@ def print_saved_file(name, path):
 def load_all_regressors(loadpath=reg_path, plot=False):
     """load all regressors(end with _index.nc') from loadpath to dataset"""
     import xarray as xr
+    from collections import OrderedDict
     da_list = []
     da_list_from_ds = []
     for file in sorted(loadpath.glob('*_index.nc')):
@@ -62,6 +63,8 @@ def load_all_regressors(loadpath=reg_path, plot=False):
             for da in ds.data_vars.values():
                 da = da.reset_coords(drop=True)
                 da.name = name + '_' + da.name
+                # avoid name repetition:
+                da.name = "_".join(OrderedDict.fromkeys(da.name.split('_')))
                 da_list_from_ds.append(da)
     for das in da_list_from_ds:
         da_list.append(das)
@@ -408,7 +411,7 @@ def _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='singapore',
     from pathlib import Path
     # load and order data dims for eofs:
     if source == 'singapore':
-        U = _download_singapore_qbo(path=path)
+        U = _download_singapore_qbo(path=loadpath)
         U = aux.xr_order(U)
         # get rid of nans:
         U = U.sel(level=slice(90, 10))
@@ -798,16 +801,31 @@ def _produce_BDC(loadpath, savepath=None):
     return bdc
 
 
-def _produce_radio_cold(savepath=None):
+def _produce_radio_cold(savepath=None, no_qbo=False):
     from strato_soundings import calc_cold_point_from_sounding
+    from aux_functions_strat import overlap_time_xr
+    from sklearn.linear_model import LinearRegression
+    from aux_functions_strat import deseason_xr
     radio = calc_cold_point_from_sounding(
             times=None,
-            return_anom=False,
+            return_anom=True,
             plot=False,
             return_mean=True)
+    filename = 'radio_cold_index.nc'
+    if no_qbo:
+        filename = 'radio_cold_no_qbo_index.nc'
+        qbos = _produce_eof_pcs(reg_path, source='era5', plot=False)
+        new_time = overlap_time_xr(qbos, radio)
+        qbos = qbos.sel(time=new_time)
+        qbos = deseason_xr(qbos.to_array('regressors'), how='mean').to_dataset('regressors')
+        radio = radio.sel(time=new_time)
+        lr = LinearRegression()
+        X = qbos.to_array('regressors').T
+        lr.fit(X, radio)
+        radio = radio - lr.predict(X)
     if savepath is not None:
-        radio.to_netcdf(savepath / 'radio_cold_index.nc', 'w')
-        print_saved_file('radio_cold_index.nc', savepath)
+        radio.to_netcdf(savepath / filename, 'w')
+        print_saved_file(filename, savepath)
     return radio
 
 #def plot_time_over_pc_xr(pc, times, norm=5):
