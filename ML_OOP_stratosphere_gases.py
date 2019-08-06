@@ -208,6 +208,19 @@ class ML_Switcher(object):
 #        return self.model
 
 
+def produce_figures(fg):
+    """input: fg xr.contourf(col=) (facetgrid object)"""
+    lags = np.arange(1, 37)
+    radio_regs = ['radio_cold_no_qbo_lag_' + str(x) for x in lags]
+    fg = rds.plot_like('pvalues', flist=radio_regs, fmax=True)
+    # change margins for packed facetgrids...
+    fg.fig.subplots_adjust(bottom=0.21, top=0.9, left=0.05, right=0.95)
+    # change small titles:
+    for i, ax in enumerate(fg.axes.flat):
+        ax.set_title('radio_cpt_lag_{}'.format(i + 1))
+    return
+
+
 def run_grid_multi(reg_stacked, da_stacked, params):
     """run one grid_search_cv on a multioutputregressors(model)"""
     import xarray as xr
@@ -299,7 +312,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=['1994', '2018'], cv=None,
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
-           reg_time_shift={'radio_cold_no_qbo': [1, 36]},
+           reg_time_shift=None,
            special_run=None, gridsearch=False,
            lat_slice=[-60, 60]):
     """Run ML model with...
@@ -1016,7 +1029,7 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
         # first regress_out from wv anoms:
         rds = run_ML(species='h2o', swoosh_field='combinedanomfillanom',
                      model_name='LR', time_period=times,
-                     regressors=['qbo_1', 'qbo_2'], lat_slice=lat_slice)
+                     regressors=regress_out, lat_slice=lat_slice)
         resid = rds.results_.resid
         dims_to_stack = [x for x in resid.dims if x != 'time']
         y = resid.stack(samples=dims_to_stack).squeeze()
@@ -1193,7 +1206,8 @@ class ImprovedRegressor(RegressorWrapper):
         corr.attrs['description'] = 'np.corrcoef on each regressor and geo point'
         return corr
 
-    def plot_like(self, field, tol=0.0, **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
+    def plot_like(self, field, flist=None, fmax=False, tol=0.0,
+                  **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
         from matplotlib.ticker import ScalarFormatter
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
@@ -1289,12 +1303,16 @@ class ImprovedRegressor(RegressorWrapper):
             con_colors = ['blue', 'cyan', 'yellow', 'red']  # for pvals
             import xarray as xr
             fdim = rds.attrs['feature_dim']
-            flist = [x for x in rds[fdim].values if
-                        xr.ufuncs.fabs(rds[field].sel({fdim: x})).mean() > tol]
+            if flist is None:
+                flist = [x for x in rds[fdim].values if
+                         xr.ufuncs.fabs(rds[field].sel({fdim: x})).mean() > tol]
             if rds[fdim].sel({fdim: flist}).size > 6:
                 colwrap = 6
             else:
                 colwrap = None
+            vmax = rds[field].max()
+            if fmax:
+                vmax = rds[field].sel({fdim: flist}).max()
             suptitle = rds[field].name
             plt_feature = {**plt_kwargs}
             plt_feature.update({'add_colorbar': False, 'levels': 41,
@@ -1304,16 +1322,15 @@ class ImprovedRegressor(RegressorWrapper):
             try:
                 if rds[field].name == 'pvalues':
                     plt_feature.update({'colors': con_colors,
-                                        'levels': con_levels, 'extend':'min'})
+                                        'levels': con_levels, 'extend': 'min'})
                     plt_feature.update(kwargs)
-                    fg = rds[field].sel({fdim: flist}).plot.contourf(col=fdim,
-                                                                     **plt_feature) # robust=robust
+                    plt_feature.pop('cmap', None)
                 else:
                     plt_feature.update({'cmap': 'bwr',
-                                        'vmax': rds[field].max()})
+                                        'vmax': vmax})
                     plt_feature.update(kwargs)
-                    fg = rds[field].sel({fdim: flist}).plot.contourf(col=fdim,
-                                                                     **plt_feature)
+                fg = rds[field].sel({fdim: flist}).plot.contourf(col=fdim,
+                                                                 **plt_feature)
                 ax = plt.gca()
                 ax.yaxis.set_major_formatter(ScalarFormatter())
                 fg.fig.subplots_adjust(bottom=0.3, top=0.85, left=0.05)
@@ -1326,7 +1343,8 @@ class ImprovedRegressor(RegressorWrapper):
             except KeyError:
                 print('Field not found or units not found...')
                 return
-            except ValueError:
+            except ValueError as valerror:
+                print(valerror)
                 fg = rds[field].plot(col=fdim, xscale='log', xincrease=False,
                                      figsize=(15, 4))
                 fg.fig.subplots_adjust(bottom=0.3, top=0.85, left=0.05)
