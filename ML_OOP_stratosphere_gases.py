@@ -35,7 +35,9 @@ class Parameters:
                  time_period=['1994', '2018'],
                  area_mean=False,
                  lat_slice=[-20, 20],
-                 original_data_file='swoosh_latpress-2.5deg.nc'):
+                 # original_data_file='swoosh_lonlatpress-20deg-5deg.nc',
+                 original_data_file='swoosh_latpress-2.5deg.nc'
+                 ):
         self.filing_order = ['data_name', 'field', 'model_name', 'season',
                              'reg_selection', 'special_run']
         self.delimeter = '_'
@@ -314,7 +316,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
            reg_time_shift=None,
            special_run=None, gridsearch=False,
-           lat_slice=[-60, 60]):
+           lat_slice=[-60, 60], latlon=False):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -349,7 +351,12 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #        return cv
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
-    keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch']
+    if latlon:
+        arg_dict['original_data_file'] = 'swoosh_lonlatpress-20deg-5deg.nc'
+        arg_dict['swoosh_field'] = 'combinedanom'
+        print('lat/lon run selected, (no fill product for lat/lon)')
+    keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch',
+                      'latlon']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = Parameters(**arg_dict)
     # p.from_dict(arg_dict)
@@ -648,8 +655,17 @@ def pre_proccess(params):
             regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
         elif reg == 'radio_cold' or reg == 'radio_cold_no_qbo':
             regressors[reg] = aux.deseason_xr(regressors[reg], how='mean')
-        elif 'qbo_' in reg:
-            regressors[reg] = aux.normalize_xr(regressors[reg], norm=1)
+#        elif 'qbo_' in reg:
+#            regressors[reg] = aux.normalize_xr(regressors[reg], norm=1)
+#        elif 'solar' in reg:
+#            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
+        elif 'bdc' in reg:
+#            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
+            regressors[reg] = aux.deseason_xr(regressors[reg], how='mean')
+#        elif 'vol' in reg:
+#            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
+    # normalize all regressors to -1 to 1:
+    regressors = aux.normalize_xr(regressors, norm=5)
     # regressing one out of the other if neccesary:
     # just did it by specifically regressed out and saved as _index.nc'
     # making lags of some of the regressors (e.g, cold point):
@@ -666,7 +682,9 @@ def pre_proccess(params):
         regressors = regressors.dropna('time')
     # load swoosh from work dir:
     ds = xr.load_dataset(path / params.original_data_file)
+    print('loading SWOOSH file: {}'.format(params.original_data_file))
     field = params.swoosh_field + species + 'q'
+    print('loading SWOOSH field: {}'.format(field))
     da = ds[field]
     # selecting time period:
     if time_period is not None:
@@ -690,6 +708,7 @@ def pre_proccess(params):
         da = aux.xr_weighted_mean(da)
     # remove nans from y:
     da = aux.remove_nan_xr(da, just_geo=False)
+    regressors = regressors.sel(time=da.time)
     # deseason y
     if season != 'all':
         da = aux.deseason_xr(da, how='mean', season=season, verbose=False)
@@ -1051,6 +1070,211 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
     return corr_da
 
 
+def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
+                      res_label=None, **kwargs):
+    """flexible plot like function for results_ xarray attr from run_ML.
+    input: plot_type - dictionary of key:plot type, value - depending on plot,
+    e.g., plot_type={'predict_by_lat': 82} will plot prediction + original +
+    residualas by a specific pressure level"""
+    from matplotlib.ticker import ScalarFormatter
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    import aux_functions_strat as aux
+    import xarray as xr
+    import pandas as pd
+    import numpy as np
+    key = [x for x in plot_type.keys()][0]
+    val = [x for x in plot_type.values()][0]
+    if len(results) == 1:
+        rds = results[0]
+        # only one run plots:
+        if key == 'predict_by_level':
+            # define plot kwargs:
+            plt_kwargs = {'yscale': 'log', 'yincrease': False, 'cmap': 'bwr',
+                          'figsize': (15, 10), 'add_colorbar': False,
+                          'extend': 'both'}
+            # transform into array:
+            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
+                                                                 name='name')
+            # copy attrs to new da:
+            for key, value in rds['original'].attrs.items():
+                da.attrs[key] = value
+            if val == 'mean':
+                label_add = ', area mean of latitudes: ' +\
+                             str(da.lat.min().values) + ' to ' + \
+                             str(da.lat.max().values)
+                da = aux.xr_weighted_mean(da)
+            else:
+                da = da.sel(lat=val, method='nearest')
+                label_add = ' at lat=' + str(da.lat.values.item())
+            # cmap_max = abs(max(abs(da.sel(opr='original').min().values),
+            #                    abs(da.sel(opr='original').max().values)))
+            da = da.reindex({'time': pd.date_range(da.time[0].values,
+                                                   da.time[-1].values,
+                                                   freq='MS')})
+            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+            plt_kwargs.update(kwargs)
+            fg = da.T.plot.contourf(row='opr', **plt_kwargs)
+            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+            fg.add_colorbar(
+                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
+                format='%0.3f')
+            fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
+#            cb = con.colorbar
+#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+            labels = [' original', ' reconstructed', ' residuals']
+            for i, ax in enumerate(fg.axes.flat):
+                ax.set_title(da.attrs['long_name'] + labels[i] + label_add,
+                             loc='center')
+            # plt_kwargs.update({'extend': 'both'})
+            ax = [ax for ax in fg.axes.flat][2]
+            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+            # [ax.invert_yaxis() for ax in con.ax.figure.axes]
+            [ax.invert_yaxis() for ax in fg.axes.flat]
+#            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+#             con.ax.figure.axes]
+            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+             fg.axes.flat]
+            # [ax.xaxis.grid(True, which='minor') for ax in con.ax.figure.axes]
+            plt.minorticks_on()
+            ax.xaxis.set_minor_locator(mdates.YearLocator())
+            ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
+            plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
+            # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
+            plt.show()
+            return fg
+        elif key == 'predict_map_by_time_level':
+            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+                          'add_colorbar': False,
+                          'extend': 'both'}
+            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+            plt_kwargs.update(kwargs)
+            # transform into array:
+            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
+                                                                name='name')
+            if 'lon' not in da.dims:
+                raise KeyError('no lon in dims!')
+            # copy attrs to new da:
+            for key, value in rds['original'].attrs.items():
+                da.attrs[key] = value
+            if len(val) == 1:
+                date = val[0]
+                suptitle = 'time= {}'.format(date)
+                da = da.sel(time=date, method='nearest').squeeze()
+                fg = da.plot.contourf(col='opr',row='level', **plt_kwargs)
+            else:
+                # seasonal mean of at least a year:
+                date = val[0]
+                plevel = val[1]
+                suptitle = 'level= {} hPa, year= {}'.format(plevel, date)
+                da = da.sel(time=date, level=plevel, method='nearest').squeeze()
+                da_seasons = da.groupby('time.season').mean('time')
+                fg = da_seasons.plot.contourf(row='season', col='opr', **plt_kwargs)
+            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+            fg.add_colorbar(
+                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
+                format='%0.3f')
+            fg.fig.suptitle(suptitle, fontsize=12, fontweight=750)
+#            cb = con.colorbar
+#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+            labels = [' original', ' reconstructed', ' residuals']
+            try:
+                for i, ax in enumerate(fg.axes.flat):
+                    ax.set_title(da.attrs['long_name'] + labels[i], loc='center')
+            except IndexError:
+                pass
+            # plt_kwargs.update({'extend': 'both'})
+            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+            plt.show()
+            return fg
+        elif key == 'predict_by_lat':
+            # define plot kwargs:
+            plt_kwargs = {'cmap': 'bwr',
+                          'figsize': (15, 10), 'add_colorbar': False,
+                          'extend': 'both'}
+            # transform into array:
+            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
+                                                                 name='name')
+            # copy attrs to new da:
+            for key, value in rds['original'].attrs.items():
+                da.attrs[key] = value
+#            if val == 'mean':
+#                label_add = ', area mean of latitudes: ' +\
+#                             str(da.lat.min().values) + ' to ' + \
+#                             str(da.lat.max().values)
+#                da = aux.xr_weighted_mean(da)
+#            else:
+            da = da.sel(level=val, method='nearest')
+            label_add = ' at level= {:.2f} hPa'.format(da.level.values.item())
+            # cmap_max = abs(max(abs(da.sel(opr='original').min().values),
+            #                    abs(da.sel(opr='original').max().values)))
+            da = da.reindex({'time': pd.date_range(da.time[0].values,
+                                                   da.time[-1].values,
+                                                   freq='MS')})
+            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+            plt_kwargs.update(kwargs)
+            fg = da.T.plot.contourf(row='opr', **plt_kwargs)
+            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+            fg.add_colorbar(
+                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
+                format='%0.3f')
+            fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
+#            cb = con.colorbar
+#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+            labels = [' original', ' reconstructed', ' residuals']
+            for i, ax in enumerate(fg.axes.flat):
+                ax.set_title(da.attrs['long_name'] + labels[i] + label_add,
+                             loc='center')
+            # plt_kwargs.update({'extend': 'both'})
+            ax = [ax for ax in fg.axes.flat][2]
+            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+            # [ax.xaxis.grid(True, which='minor') for ax in con.ax.figure.axes]
+            plt.minorticks_on()
+            ax.xaxis.set_minor_locator(mdates.YearLocator())
+            ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
+            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
+            plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
+            # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
+            plt.show()
+            return fg
+    elif len(results) > 1:
+        if key == 'r2':
+            plt_kwargs = {'yscale': 'log', 'yincrease': False,
+                          'cmap': 'viridis', 'figsize': (6 * len(results), 8),
+                          'levels': 41, 'vmin': 0.0}
+            # transform into array:
+            da_list = [x['r2_adj'] for x in results]
+            for i, da in enumerate(da_list):
+                da.name = res_label[i]
+            ds = xr.merge(da_list)
+            da = ds.to_array(dim='regressors', name='name')
+            if 'lon' in da.dims:
+                da = da.mean('lon')
+            da['regressors'] = res_label
+            # copy attrs to new da:
+            for key, value in results[0]['r2_adj'].attrs.items():
+                da.attrs[key] = value
+            plt_kwargs.update(kwargs)
+            fg = da.plot.contourf(col='regressors', **plt_kwargs)
+            fg.fig.subplots_adjust(top=0.92, right=0.82, left=0.05)
+            # [ax.invert_yaxis() for ax in con.ax.figure.axes]
+            for i, ax in enumerate(fg.axes.flat):
+                ax.set_title(res_label[i], loc='center')
+            [ax.invert_yaxis() for ax in fg.axes.flat]
+#            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+#             con.ax.figure.axes]
+            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+             fg.axes.flat]
+            fg.fig.suptitle('R^2 adjusted', fontsize=12, fontweight=750)
+            plt.show()
+            return fg
+
+        # two compareing plots:
+    # if 'div' in keys:
+    #     cmap = 'bwr'
+    # else:
+    #     cmap = 'viridis'
 class ImprovedRegressor(RegressorWrapper):
     def __init__(self, estimator=None, reshapes=None, sample_dim=None,
                  **kwargs):
