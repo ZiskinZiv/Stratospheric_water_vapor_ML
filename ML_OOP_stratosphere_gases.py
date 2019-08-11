@@ -1431,7 +1431,13 @@ class ImprovedRegressor(RegressorWrapper):
         return corr
 
     def plot_like(self, field, flist=None, fmax=False, tol=0.0,
-                  **kwargs):  # div=False, robust=False, vmax=None, vmin=None):
+                  mean_lonlat=[True, False], **kwargs):
+        # div=False, robust=False, vmax=None, vmin=None):
+        """main plot for the results_ product of ImrovedRegressor
+        flist: list of regressors to plot,
+        fmax: wether to normalize color map on the plotted regressors,
+        tol: used to control what regressors to show,
+        mean_lonlat: wether to mean fields on the lat or lon dim"""
         from matplotlib.ticker import ScalarFormatter
         import matplotlib.pyplot as plt
         import aux_functions_strat as aux
@@ -1476,8 +1482,8 @@ class ImprovedRegressor(RegressorWrapper):
                                                          times.time[-1].values,
                                                          freq='MS')})
             plt_sample.update({'extend': 'both'})
-            con = times.T.plot.contourf(ax=axes[1], **plt_sample) #,
-                                        # robust=robust)
+            con = times.T.plot.contourf(ax=axes[1], **plt_sample)
+            # robust=robust)
             cb = con.colorbar
             try:
                 cb.set_label(times.attrs['units'], fontsize=10)
@@ -1498,14 +1504,14 @@ class ImprovedRegressor(RegressorWrapper):
             plt_error.update({'cmap': 'viridis', 'add_colorbar': True,
                              'figsize': (6, 8)})
             plt_error.update(kwargs)
+            if 'lon' in rds[field].dims:
+                error_field = aux.xr_weighted_mean(rds[field],
+                                                   mean_on_lon=mean_lonlat[0],
+                                                   mean_on_lat=mean_lonlat[1])
+            else:
+                error_field = rds[field]
             try:
-#                con = rds[field].plot.contourf(yscale='log', yincrease=False,
-#                                               add_colorbar=True,
-#                                               cmap=cmap, levels=41,
-#                                               figsize=(6, 8),
-#                                               robust=robust, vmax=vmax,
-#                                               vmin=vmin)
-                con = rds[field].plot.contourf(**plt_error)
+                con = error_field.plot.contourf(**plt_error)
                 ax = plt.gca()
                 ax.yaxis.set_major_formatter(ScalarFormatter())
                 plt.suptitle(suptitle, fontsize=12, fontweight=750)
@@ -1513,7 +1519,7 @@ class ImprovedRegressor(RegressorWrapper):
                 print('Field not found or units not found...')
                 return
             except ValueError:
-                con = rds[field].plot(xscale='log', xincrease=False,
+                con = error_field.plot(xscale='log', xincrease=False,
                                       figsize=(6, 8))
                 ax = plt.gca()
                 ax.xaxis.set_major_formatter(ScalarFormatter())
@@ -1534,17 +1540,23 @@ class ImprovedRegressor(RegressorWrapper):
                 colwrap = 6
             else:
                 colwrap = None
-            vmax = rds[field].max()
+            if 'lon' in rds[field].dims:
+                feature_field = aux.xr_weighted_mean(rds[field],
+                                                     mean_on_lon=mean_lonlat[0],
+                                                     mean_on_lat=mean_lonlat[1])
+            else:
+                feature_field = rds[field]
+            vmax = feature_field.max()
             if fmax:
-                vmax = rds[field].sel({fdim: flist}).max()
-            suptitle = rds[field].name
+                vmax = feature_field.sel({fdim: flist}).max()
+            suptitle = feature_field.name
             plt_feature = {**plt_kwargs}
             plt_feature.update({'add_colorbar': False, 'levels': 41,
                                 'figsize': (15, 4),
                                 'extend': 'min', 'col_wrap': colwrap})
             plt_feature.update(kwargs)
             try:
-                if rds[field].name == 'pvalues':
+                if feature_field.name == 'pvalues':
                     plt_feature.update({'colors': con_colors,
                                         'levels': con_levels, 'extend': 'min'})
                     plt_feature.update(kwargs)
@@ -1553,8 +1565,8 @@ class ImprovedRegressor(RegressorWrapper):
                     plt_feature.update({'cmap': 'bwr',
                                         'vmax': vmax})
                     plt_feature.update(kwargs)
-                fg = rds[field].sel({fdim: flist}).plot.contourf(col=fdim,
-                                                                 **plt_feature)
+                fg = feature_field.sel({fdim: flist}).plot.contourf(col=fdim,
+                                                                    **plt_feature)
                 ax = plt.gca()
                 ax.yaxis.set_major_formatter(ScalarFormatter())
                 fg.fig.subplots_adjust(bottom=0.3, top=0.85, left=0.05)
@@ -1569,7 +1581,7 @@ class ImprovedRegressor(RegressorWrapper):
                 return
             except ValueError as valerror:
                 print(valerror)
-                fg = rds[field].plot(col=fdim, xscale='log', xincrease=False,
+                fg = feature_field.plot(col=fdim, xscale='log', xincrease=False,
                                      figsize=(15, 4))
                 fg.fig.subplots_adjust(bottom=0.3, top=0.85, left=0.05)
                 ax = plt.gca()
