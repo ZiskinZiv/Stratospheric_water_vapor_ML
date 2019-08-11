@@ -51,21 +51,32 @@ def reg_stack(regressors):
     return reg_da
 
 
-def xr_weighted_mean(xarray):
+def xr_weighted_mean(xarray, mean_on_lon=True, mean_on_lat=True):
     import xarray as xr
     attrs = xarray.attrs
-    if type(xarray) == xr.DataArray:
+    if isinstance(xarray, xr.DataArray):
         ds = xarray.to_dataset()
         was_da = True
-    if type(xarray) == xr.Dataset:
+    if isinstance(xarray, xr.Dataset):
         ds = xarray
         was_da = False
     ds = area_from_latlon_xr(ds)
     data_vars = [x for x in ds.data_vars.keys() if x != 'area']
-    if 'lon' in ds.dims:
+    if 'lon' in ds.dims and mean_on_lon and mean_on_lat:
+        # do mean on lon and lat:
         for var in data_vars:
             ds[var] = (ds['area'] * ds[var]).sum('lon') / ds['area'].sum('lon')
-            ds[var] = (ds['area'].sum('lon') * ds[var]).sum('lat') / ds['area'].sum('lon').sum('lat')
+            ds[var] = (ds['area'].sum('lon') * ds[var]).sum('lat') / \
+                ds['area'].sum('lon').sum('lat')
+    elif 'lon' in ds.dims and not mean_on_lon and mean_on_lat:
+        # do mean on lat only:
+        for var in data_vars:
+            ds[var] = (ds['area'].sum('lon') * ds[var]).sum('lat') / \
+                ds['area'].sum('lon').sum('lat')
+    elif 'lon' in ds.dims and mean_on_lon and not mean_on_lat:
+        # do mean on lon only:
+        for var in data_vars:
+            ds[var] = (ds['area'] * ds[var]).sum('lon') / ds['area'].sum('lon')
     else:
         for var in data_vars:
             ds[var] = (ds['area'] * ds[var]).sum('lat') / ds['area'].sum('lat')
@@ -77,6 +88,7 @@ def xr_weighted_mean(xarray):
     if 'time' in xarray.dims:
         da['time'] = xarray.time
     da.attrs = attrs
+    da = xr_order(da)
     return da
 
 
