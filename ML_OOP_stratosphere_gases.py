@@ -10,12 +10,12 @@ Created on Sun Mar 10 13:20:30 2019
 
 from strat_paths import work_chaim
 from strat_paths import adams_path
-sound_path = work_chaim / 'sounding'
 from sklearn_xarray import RegressorWrapper
 # import warnings filter
 from warnings import simplefilter
 # ignore all future warnings
 simplefilter(action='ignore', category=FutureWarning)
+sound_path = work_chaim / 'sounding'
 
 
 class Parameters:
@@ -1250,7 +1250,12 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
             ds = xr.merge(da_list)
             da = ds.to_array(dim='regressors', name='name')
             if 'lon' in da.dims:
-                da = da.mean('lon')
+                if val == 'lon':
+                    da = aux.xr_weighted_mean(da, mean_on_lon=False,
+                                              mean_on_lat=True)
+                else:
+                    da = aux.xr_weighted_mean(da, mean_on_lon=True,
+                                              mean_on_lat=False)
             da['regressors'] = res_label
             # copy attrs to new da:
             for key, value in results[0]['r2_adj'].attrs.items():
