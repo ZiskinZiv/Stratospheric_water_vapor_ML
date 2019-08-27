@@ -1188,6 +1188,41 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
             fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
             plt.show()
             return fg
+        elif key == 'params_map_by_level':
+            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+                          'add_colorbar': False,
+                          'extend': 'both'}
+            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+            plt_kwargs.update(kwargs)
+            # transform into array:
+            da = rds['params']
+            if 'lon' not in da.dims:
+                raise KeyError('no lon in dims!')
+            # copy attrs to new da:
+            if len(val) == 1:
+                plevel = val[0]
+                suptitle = 'level= {} hPa'.format(plevel)
+                da = da.sel(level=plevel, method='nearest').squeeze()
+                fg = da.plot.contourf(col='regressors', **plt_kwargs)
+            else:
+                # seasonal mean of at least a year:
+                plevel = val[0]
+                flist = val[1]
+                suptitle = 'level= {} hPa'.format(plevel)
+                da = da.sel(level=plevel, method='nearest').squeeze()
+                da = da.sel(regressors=flist).squeeze()
+                fg = da.plot.contourf(col='regressors', **plt_kwargs)
+            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+            fg.add_colorbar(
+                cax=cbar_ax, orientation="horizontal", label='coeff',
+                format='%0.3f')
+            fg.fig.suptitle(suptitle, fontsize=12, fontweight=750)
+#            cb = con.colorbar
+#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+            # plt_kwargs.update({'extend': 'both'})
+            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+            plt.show()
+            return fg
         elif key == 'predict_by_lat':
             # define plot kwargs:
             plt_kwargs = {'cmap': 'bwr',
