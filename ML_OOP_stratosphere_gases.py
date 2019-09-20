@@ -316,7 +316,8 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
            reg_time_shift=None,
            special_run=None, gridsearch=False,
-           lat_slice=[-60, 60], latlon=False):
+           lat_slice=[-60, 60], swoosh_latlon=False,
+           original_data_file='swoosh_latpress-2.5deg.nc'):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -351,12 +352,12 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #        return cv
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
-    if latlon:
+    if swoosh_latlon:
         arg_dict['original_data_file'] = 'swoosh_lonlatpress-20deg-5deg.nc'
         arg_dict['swoosh_field'] = 'combinedanom'
         print('lat/lon run selected, (no fill product for lat/lon)')
     keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch',
-                      'latlon']
+                      'swoosh_latlon']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = Parameters(**arg_dict)
     # p.from_dict(arg_dict)
@@ -680,11 +681,16 @@ def pre_proccess(params):
         regressors = xr.merge([regressors, ds])
         # now drop nan bc of the shifts:
         regressors = regressors.dropna('time')
-    # load swoosh from work dir:
-    ds = xr.load_dataset(path / params.original_data_file)
-    print('loading SWOOSH file: {}'.format(params.original_data_file))
-    field = params.swoosh_field + species + 'q'
-    print('loading SWOOSH field: {}'.format(field))
+    if params.swoosh_field is not None:
+        # load swoosh from work dir:
+        ds = xr.load_dataset(path / params.original_data_file)
+        print('loading SWOOSH file: {}'.format(params.original_data_file))
+        field = params.swoosh_field + species + 'q'
+        print('loading SWOOSH field: {}'.format(field))
+    else:
+        ds = xr.load_dataset(path / params.original_data_file)
+        print('loading file: {}'.format(params.original_data_file))
+        field = species
     da = ds[field]
     # selecting time period:
     if time_period is not None:
@@ -1409,8 +1415,10 @@ class ImprovedRegressor(RegressorWrapper):
         # put coords attrs back:
         for coord, attr in y.attrs['coords_attrs'].items():
             rds[coord].attrs = attr
-        # remove coords attrs from original:
+        # remove coords attrs from original, predict and resid:
         rds.original.attrs.pop('coords_attrs')
+        rds.predict.attrs.pop('coords_attrs')
+        rds.resid.attrs.pop('coords_attrs')
         all_var_names = [x for x in rds.data_vars.keys()]
         sample_types = [x for x in rds.data_vars.keys()
                         if self.sample_dim in rds[x].dims]
@@ -1622,7 +1630,7 @@ class ImprovedRegressor(RegressorWrapper):
             except ValueError as valerror:
                 print(valerror)
                 fg = feature_field.plot(col=fdim, xscale='log', xincrease=False,
-                                     figsize=(15, 4))
+                                        figsize=(15, 4))
                 fg.fig.subplots_adjust(bottom=0.3, top=0.85, left=0.05)
                 ax = plt.gca()
                 ax.xaxis.set_major_formatter(ScalarFormatter())
