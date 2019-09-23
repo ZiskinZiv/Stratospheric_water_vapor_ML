@@ -210,6 +210,28 @@ class ML_Switcher(object):
 #        return self.model
 
 
+def produce_figures_2(X, results, level, year):
+    field = results.original.attrs['long_name']
+    units = results.original.attrs['units']
+    da = results.params.sel(level=level, method='nearest') * X.sel(time=str(year))
+    plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+                  'add_colorbar': False,
+                  'extend': 'both'}
+    plt_kwargs.update({'center': 0.0, 'levels': 41})
+    da_seasons = da.groupby('time.season').mean('time')
+    fg = da_seasons.plot.contourf(row='season', col='regressors', **plt_kwargs)
+    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+    fg.add_colorbar(
+        cax=cbar_ax, orientation="horizontal", label=units,
+        format='%0.3f')
+    year = list(set(da.time.dt.year.values))[0]
+    level = da_seasons.level.values.item()
+    fg.fig.suptitle('{}, level={:.2f} hPa , year={}'.format(
+        field, level, year), fontsize=12, fontweight=750)
+    fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+    return fg
+
+
 def produce_figures(fg):
     """input: fg xr.contourf(col=) (facetgrid object)"""
     lags = np.arange(1, 37)
