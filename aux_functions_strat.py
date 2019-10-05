@@ -28,45 +28,6 @@ def configure_logger(name='general', filename=None):
 # choice of picking all possible permutaions : 2**len(reg_vector) - 1
 
 
-def transform_l137_ml_to_pressure(ds, l137_path):
-    """transform model levels from int numbers to hPa full pressure levels"""
-    l137 = read_L137_to_ds(l137_path)
-    levels = ds.level.values
-    pf = l137.sel(n=levels).pf.values
-    ds['level'] = pf
-    return ds
-
-
-def read_L137_to_ds(path):
-    import pandas as pd
-    l137_df = pd.read_csv(path / 'L137_model_levels_1976_climate.txt',
-                          header=None, delim_whitespace=True, na_values='-')
-    l137_df.columns = ['n', 'a', 'b', 'ph', 'pf', 'Geopotential Altitude',
-                       'Geometric Altitude', 'Temperature', 'Density']
-    l137_df.set_index('n')
-    l137_df.drop('n', axis=1, inplace=True)
-    l137_df.index.name = 'n'
-    ds = l137_df.to_xarray()
-    ds.attrs['long_name'] = 'L137 model levels and 1976 ICAO standard atmosphere 1976'
-    ds.attrs['surface_pressure'] = 1013.250
-    ds.attrs['pressure_units'] = 'hPa'
-    ds.attrs['half_pressure_formula'] = 'ph(k+1/2) = a(k+1/2) + ps*b(k+1/2)'
-    ds.attrs['full_pressure_formula'] = 'pf(k) = 1/2*(ph(k-1/2) + ph(k-1/2))'
-    ds['n'].attrs['long_name'] = 'model_level_number'
-    ds['a'].attrs['long_name'] = 'a_coefficient'
-    ds['a'].attrs['units'] = 'hPa'
-    ds['b'].attrs['long_name'] = 'b_coefficient'
-    ds['ph'].attrs['long_name'] = 'half_pressure_level'
-    ds['ph'].attrs['units'] = 'hPa'
-    ds['pf'].attrs['long_name'] = 'full_pressure_level'
-    ds['pf'].attrs['units'] = 'hPa'
-    ds['Geopotential Altitude'].attrs['units'] = 'm'
-    ds['Geometric Altitude'].attrs['units'] = 'm'
-    ds['Temperature'].attrs['units'] = 'K'
-    ds['Density'].attrs['units'] = 'kg/m^3'
-    return ds
-
-
 def adj_rsquare_xr(rs_da, n_samples, p_ind_vars):
     """produced ajusted rsquares score with n_samples,
     p_ind_vars(number of regressors) and rs_da dattarry of rsquared score"""
@@ -451,6 +412,27 @@ def overlap_time_xr(*args, time_dim='time'):
     intersection = set.intersection(*map(set, time_list))
     intr = sorted(list(intersection))
     return intr
+
+
+def dim_intersection(da_list, dim='time', dropna=True, verbose=None):
+    import pandas as pd
+    if dropna:
+        setlist = [set(x.dropna(dim)[dim].values) for x in da_list]
+    else:
+        setlist = [set(x[dim].values) for x in da_list]
+    empty_list = [x for x in setlist if not x]
+    if empty_list:
+        if verbose == 0:
+            print('NaN dim drop detected, check da...')
+        return None
+    u = list(set.intersection(*setlist))
+    # new_dim = list(set(a.dropna(dim)[dim].values).intersection(
+    #     set(b.dropna(dim)[dim].values)))
+    if dim == 'time':
+        new_dim = sorted(pd.to_datetime(u))
+    else:
+        new_dim = sorted(u)
+    return new_dim
 
 
 def xr_order(xrr, dims_order=['time', 'level', 'lat', 'lon']):
