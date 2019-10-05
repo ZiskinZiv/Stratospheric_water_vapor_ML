@@ -648,9 +648,11 @@ def pre_proccess(params):
     shifting the data with minus"""
     import aux_functions_strat as aux
     import xarray as xr
+    import click
     reg_list = params.regressors
     species = params.species
     season = params.season
+    swoosh_field = params.swoosh_field
     lat_slice = params.lat_slice
     time_period = params.time_period
     area_mean = params.area_mean
@@ -703,12 +705,21 @@ def pre_proccess(params):
         regressors = xr.merge([regressors, ds])
         # now drop nan bc of the shifts:
         regressors = regressors.dropna('time')
-    if params.swoosh_field is not None:
+    if species != 'h2o' and species != 'o3':
+        swoosh_field = None
+    if swoosh_field is not None:
         # load swoosh from work dir:
         ds = xr.load_dataset(path / params.original_data_file)
         print('loading SWOOSH file: {}'.format(params.original_data_file))
-        field = params.swoosh_field + species + 'q'
+        field = swoosh_field + species + 'q'
         print('loading SWOOSH field: {}'.format(field))
+    elif (swoosh_field is None and (species == 'h2o' or species == 'o3')):
+        msg = 'species is {}, and original_data_file is not SWOOSH'.format(species)
+        msg += ',Do you want to continue?'
+        if click.confirm(msg, default=True):
+            ds = xr.load_dataset(path / params.original_data_file)
+            print('loading file: {}'.format(params.original_data_file))
+            field = species
     else:
         ds = xr.load_dataset(path / params.original_data_file)
         print('loading file: {}'.format(params.original_data_file))
@@ -724,7 +735,10 @@ def pre_proccess(params):
     da = da.sel(time=new_time)
     # slice to level and latitude:
     print('selecting latitude area: {} to {}'.format(*lat_slice))
-    da = da.sel(level=slice(100, 1), lat=slice(*lat_slice))
+    if da.level.size > 1:
+        da = da.sel(level=slice(100, 1), lat=slice(*lat_slice))
+    else:
+        da = da.sel(lat=slice(*lat_slice))
     # select seasonality:
     if season != 'all':
         print('selecting season: {}'.format(season))
@@ -1381,7 +1395,7 @@ class ImprovedRegressor(RegressorWrapper):
         from sklearn.metrics import r2_score
         from aux_functions_strat import text_blue
         feature_dim, mt_dim = get_feature_multitask_dim(X, y, self.sample_dim)
-        rds = y.to_dataset('original').copy(deep=False, data=None)
+        rds = y.to_dataset(name='original').copy(deep=False, data=None)
         if sk_attr(self, 'coef_') and sk_attr(self, 'intercept_'):
             rds[feature_dim] = X[feature_dim]
             if mt_dim:
