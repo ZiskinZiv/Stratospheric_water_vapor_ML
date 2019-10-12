@@ -344,6 +344,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
     the special run
+    reg_time_shift = {'radio_cold_no_qbo':36} - get the 36 lags of the regressor
     example special_run={'optimize_time_shift':(-12,12)}
     use optimize_time_shift with area_mean=True"""
     def parse_cv(cv):
@@ -1230,6 +1231,57 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
             fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
             plt.show()
             return fg
+        elif key == 'predict_map_by_level':
+            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+                          'add_colorbar': False,
+                          'extend': 'both'}
+            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+            plt_kwargs.update(kwargs)
+            # transform into array:
+            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
+                                                                name='name')
+            if 'lon' not in da.dims:
+                raise KeyError('no lon in dims!')
+            # copy attrs to new da:
+            for key, value in rds['original'].attrs.items():
+                da.attrs[key] = value
+            if len(val) == 2:
+                plevel = val[0]
+                if val[1] == 'lat_mean':
+                    label_add = ', area mean of latitudes: ' +\
+                        str(da.lat.min().values) + ' to ' + \
+                        str(da.lat.max().values)
+                    da = da.mean('lat', keep_attrs=True)
+                    suptitle = 'level= {} hPa'.format(plevel)
+                    da = da.sel(level=plevel, method='nearest').squeeze()
+                elif val[1] == 'lon_mean':
+                    label_add = ', area mean of longitudes: ' +\
+                        str(da.lon.min().values) + ' to ' + \
+                        str(da.lon.max().values)
+                    da = da.mean('lon', keep_attrs=True)
+                    suptitle = 'level= {} hPa'.format(plevel)
+                    da = da.sel(level=plevel, method='nearest').squeeze()
+            else:
+                raise KeyError('pls choose level and either lon_mean or lat_mean')
+            fg = da.T.plot.contourf(row='opr', **plt_kwargs)
+            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+            fg.add_colorbar(
+                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
+                format='%0.3f')
+            fg.fig.suptitle(suptitle, fontsize=12, fontweight=750)
+#            cb = con.colorbar
+#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+            labels = [' original', ' reconstructed', ' residuals']
+            try:
+                for i, ax in enumerate(fg.axes.flat):
+                    ax.set_title(da.attrs['long_name'] + labels[i] + label_add,
+                                 loc='center')
+            except IndexError:
+                pass
+            # plt_kwargs.update({'extend': 'both'})
+            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+            plt.show()
+            return fg
         elif key == 'params_map_by_level':
             plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
                           'add_colorbar': False,
@@ -1313,6 +1365,19 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
             plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
             plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
             # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
+            plt.show()
+            return fg
+        elif key == 'r2_by_level':
+            plt_kwargs = {'cmap': 'viridis', 'figsize': (6, 8),
+                          'levels': 41, 'vmin': 0.0}
+            plevel = val
+            da = rds['r2_adj'].sel(level=plevel, method='nearest')
+            if 'lon' not in da.dims:
+                raise KeyError('no lon in dims!')
+            plt_kwargs.update(kwargs)
+            fg = da.plot.contourf(**plt_kwargs)
+            fg.ax.figure.suptitle('R^2 adjusted', fontsize=12, fontweight=750)
+            fg.ax.set_title('level = {:.2f} hPa'.format(plevel))
             plt.show()
             return fg
     elif len(results) > 1:
