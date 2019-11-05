@@ -210,24 +210,40 @@ class ML_Switcher(object):
 #        return self.model
 
 
-def produce_figures_2(X, results, level, year):
+def produce_figures_2(X, results, level, time, grp='time.season'):
+    time_slice = False
+    if isinstance(time, str):
+        time = int(time)  # assuming year only
+    if not isinstance(time, int) and len(time) == 2:
+        time = [str(x) for x in time]
+        time_slice = True
+        min_time = time[0]
+        max_time = time[1]
     field = results.original.attrs['long_name']
     units = results.original.attrs['units']
-    da = results.params.sel(level=level, method='nearest') * X.sel(time=str(year))
+    if time_slice:
+        da = results.params.sel(level=level, method='nearest') * X.sel(time=slice(min_time, max_time))
+    else:
+        da = results.params.sel(level=level, method='nearest') * X.sel(time=str(time))
     plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
                   'add_colorbar': False,
                   'extend': 'both'}
     plt_kwargs.update({'center': 0.0, 'levels': 41})
-    da_seasons = da.groupby('time.season').mean('time')
-    fg = da_seasons.plot.contourf(row='season', col='regressors', **plt_kwargs)
+    da_seasons = da.groupby(grp).mean('time')
+    grp_row = grp.split('.')[-1]
+    fg = da_seasons.plot.contourf(row=grp_row, col='regressors', **plt_kwargs)
     cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
     fg.add_colorbar(
         cax=cbar_ax, orientation="horizontal", label=units,
         format='%0.3f')
-    year = list(set(da.time.dt.year.values))[0]
+    # year = list(set(da.time.dt.year.values))[0]
     level = da_seasons.level.values.item()
-    fg.fig.suptitle('{}, level={:.2f} hPa , year={}'.format(
-        field, level, year), fontsize=12, fontweight=750)
+    if time_slice:
+        fg.fig.suptitle('{}, level={:.2f} hPa , time={} to {}'.format(
+                field, level, min_time, max_time), fontsize=12, fontweight=750)
+    else:
+        fg.fig.suptitle('{}, level={:.2f} hPa , time={}'.format(
+                field, level, time), fontsize=12, fontweight=750)
     fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
     return fg
 
@@ -1119,6 +1135,7 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
     input: plot_type - dictionary of key:plot type, value - depending on plot,
     e.g., plot_type={'predict_by_lat': 82} will plot prediction + original +
     residualas by a specific pressure level"""
+    # TODO: improve predict_map_by_time_level to have single month display or season
     from matplotlib.ticker import ScalarFormatter
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
