@@ -210,7 +210,7 @@ class ML_Switcher(object):
 #        return self.model
 
 
-def produce_figures_2(X, results, level, time, grp='time.season'):
+def produce_regressors_response_figs(X, results, level, time, grp='time.season'):
     time_slice = False
     if isinstance(time, str):
         time = int(time)  # assuming year only
@@ -1221,9 +1221,10 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
             if len(val) == 1:
                 date = val[0]
                 suptitle = 'time= {}'.format(date)
-                da = da.sel(time=date, method='nearest').squeeze()
-                fg = da.plot.contourf(col='opr',row='level', **plt_kwargs)
-            else:
+                da = da.sel(time=date, method='nearest').squeeze(drop=True)
+                # fg = da.plot.contourf(col='opr',row='level', **plt_kwargs)
+                fg = da.plot.contourf(col='opr', **plt_kwargs)
+            elif len(val) == 2:
                 # seasonal mean of at least a year:
                 date = val[0]
                 plevel = val[1]
@@ -1231,6 +1232,15 @@ def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
                 da = da.sel(time=date, level=plevel, method='nearest').squeeze()
                 da_seasons = da.groupby('time.season').mean('time')
                 fg = da_seasons.plot.contourf(row='season', col='opr', **plt_kwargs)
+            elif len(val) == 3:
+                min_time = val[0]
+                max_time = val[1]
+                plevel = val[2]
+                suptitle = 'level= {} hPa, time= {} to {}'.format(plevel, min_time, max_time)
+                da = da.sel(time=slice(min_time, max_time))
+                da = da.sel(level=plevel, method='nearest').squeeze()
+                # da_seasons = da.groupby('time.season').mean('time')
+                fg = da.plot.contourf(row='time', col='opr', **plt_kwargs)
             cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
             fg.add_colorbar(
                 cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
