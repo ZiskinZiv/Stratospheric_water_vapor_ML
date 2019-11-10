@@ -22,7 +22,7 @@ class Parameters:
     """a parameters class for stratosphere gases modelling using ML methods"""
     def __init__(self,
                  model_name='LR',
-                 season='all',
+                 season=None,
 #                 regressors_file='Regressors.nc',
                  swoosh_field='combinedanomfillanom',
                  regressors=None,   # default None means all regressors
@@ -352,7 +352,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=['1994', '2018'], cv=None,
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
-           reg_time_shift=None,
+           reg_time_shift=None, season=None,
            special_run=None, gridsearch=False,
            lat_slice=[-60, 60], swoosh_latlon=False,
            original_data_file='swoosh_latpress-2.5deg.nc'):
@@ -757,7 +757,7 @@ def pre_proccess(params):
     else:
         da = da.sel(lat=slice(*lat_slice))
     # select seasonality:
-    if season != 'all':
+    if season is not None:
         print('selecting season: {}'.format(season))
         da = da.sel(time=da['time.season'] == season)
         regressors = regressors.sel(time=regressors['time.season'] == season)
@@ -769,7 +769,7 @@ def pre_proccess(params):
     da = aux.remove_nan_xr(da, just_geo=False)
     regressors = regressors.sel(time=da.time)
     # deseason y
-    if season != 'all':
+    if season is not None:
         da = aux.deseason_xr(da, how='mean', season=season, verbose=False)
     else:
         da = aux.deseason_xr(da, how='mean', verbose=False)
@@ -1607,7 +1607,7 @@ class ImprovedRegressor(RegressorWrapper):
         return corr
 
     def plot_like(self, field, flist=None, fmax=False, tol=0.0,
-                  mean_lonlat=[True, False], **kwargs):
+                  mean_lonlat=[True, False], title=None, **kwargs):
         # div=False, robust=False, vmax=None, vmin=None):
         """main plot for the results_ product of ImrovedRegressor
         flist: list of regressors to plot,
@@ -1623,7 +1623,7 @@ class ImprovedRegressor(RegressorWrapper):
             raise AttributeError('No results yet... run model.fit(X,y) first!')
         rds = self.results_
         if field not in rds.data_vars:
-            raise KeyError('No ' + str(field) + ' in results_!')
+            raise KeyError('No {} in results_!'.format(field))
         # if 'div' in keys:
         #     cmap = 'bwr'
         # else:
@@ -1675,7 +1675,10 @@ class ImprovedRegressor(RegressorWrapper):
             return con
         elif field in rds.attrs['error_types']:
             # TODO: add contour lines
-            suptitle = rds[field].name
+            if title is not None:
+                suptitle = title
+            else:
+                suptitle = rds[field].name
             plt_error = {**plt_kwargs}
             plt_error.update({'cmap': 'viridis', 'add_colorbar': True,
                              'figsize': (6, 8)})
@@ -1725,22 +1728,25 @@ class ImprovedRegressor(RegressorWrapper):
             vmax = feature_field.max()
             if fmax:
                 vmax = feature_field.sel({fdim: flist}).max()
-            suptitle = feature_field.name
+            if title is not None:
+                suptitle = title
+            else:
+                suptitle = feature_field.name
             plt_feature = {**plt_kwargs}
             plt_feature.update({'add_colorbar': False, 'levels': 41,
                                 'figsize': (15, 4),
                                 'extend': 'min', 'col_wrap': colwrap})
-            plt_feature.update(kwargs)
+            plt_feature.update(**kwargs)
             try:
                 if feature_field.name == 'pvalues':
                     plt_feature.update({'colors': con_colors,
                                         'levels': con_levels, 'extend': 'min'})
-                    plt_feature.update(kwargs)
+                    plt_feature.update(**kwargs)
                     plt_feature.pop('cmap', None)
                 else:
                     plt_feature.update({'cmap': 'bwr',
                                         'vmax': vmax})
-                    plt_feature.update(kwargs)
+                    plt_feature.update(**kwargs)
                 fg = feature_field.sel({fdim: flist}).plot.contourf(col=fdim,
                                                                     **plt_feature)
                 ax = plt.gca()
