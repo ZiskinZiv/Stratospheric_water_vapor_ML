@@ -7,6 +7,23 @@ Created on Mon Oct 22 10:33:05 2018
 """
 
 
+def path_glob(path, glob_str='*.nc', return_empty_list=False):
+    """returns all the files with full path(pathlib3 objs) if files exist in
+    path, if not, returns FilenotFoundErro"""
+    from pathlib import Path
+#    if not isinstance(path, Path):
+#        raise Exception('{} must be a pathlib object'.format(path))
+    path = Path(path)
+    files_with_path = [file for file in path.glob(glob_str) if file.is_file]
+    if not files_with_path and not return_empty_list:
+        raise FileNotFoundError('{} search in {} found no files.'.format(glob_str,
+                        path))
+    elif not files_with_path and return_empty_list:
+        return files_with_path
+    else:
+        return files_with_path
+
+
 def configure_logger(name='general', filename=None):
     import logging
     import sys
