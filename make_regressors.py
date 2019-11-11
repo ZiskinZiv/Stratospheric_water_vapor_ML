@@ -40,7 +40,7 @@ reg_path = cwd / 'regressors'
 
 
 def print_saved_file(name, path):
-    print(name + ' was saved to ' + str(path))
+    print('{} was saved to {}'.format(name, path))
     return
 
 
@@ -48,9 +48,11 @@ def load_all_regressors(loadpath=reg_path, plot=False):
     """load all regressors(end with _index.nc') from loadpath to dataset"""
     import xarray as xr
     from collections import OrderedDict
+    from aux_functions_strat import path_glob
     da_list = []
     da_list_from_ds = []
-    for file in sorted(loadpath.glob('*_index.nc')):
+    files = sorted(path_glob(reg_path, '*index.nc'))
+    for file in files:
         name = file.as_posix().split(
             '/')[-1].split('.')[0].replace('_index', '')
         try:
@@ -62,9 +64,12 @@ def load_all_regressors(loadpath=reg_path, plot=False):
             ds = xr.load_dataset(file)
             for da in ds.data_vars.values():
                 da = da.reset_coords(drop=True)
-                da.name = name + '_' + da.name
-                # avoid name repetition:
-                da.name = "_".join(OrderedDict.fromkeys(da.name.split('_')))
+                try:
+                    da.name = da.attrs['name']
+                except KeyError:
+                    da.name = name + '_' + da.name
+                    # avoid name repetition:
+                    da.name = "_".join(OrderedDict.fromkeys(da.name.split('_')))
                 da_list_from_ds.append(da)
     for das in da_list_from_ds:
         da_list.append(das)
@@ -322,6 +327,36 @@ def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
 #    cold_point.to_netcdf(savepath + 'cold_point_index.nc')
 #    print('Saved cold_point_index.nc to ' + savepath)
 #    return cold_point
+def _produce_CDAS_QBO(savepath=None):
+    import pandas as pd
+    url = 'https://www.cpc.ncep.noaa.gov/data/indices/qbo.u50.index'
+    df = pd.read_csv(url, header=2, delim_whitespace=True)
+    anom_index = df[df['YEAR'] == 'ANOMALY'].index.values.item()
+    orig = df.iloc[0:anom_index - 2, :]
+    stan_index = df[df['YEAR'] == 'STANDARDIZED'].index.values.item()
+    anom = df.iloc[anom_index + 2: stan_index - 2, :]
+    stan = df.iloc[stan_index + 2:-1, :]
+    dfs = []
+    for df in [orig, anom, stan]:
+        df.drop(df.tail(1).index, inplace=True)
+        df = df.melt(id_vars='YEAR', var_name='MONTH')
+        datetime = pd.to_datetime((df.YEAR + '-' + df.MONTH).apply(str), format='%Y-%b')
+        df.index = datetime
+        df = df.sort_index()
+        df = df.drop(['YEAR', 'MONTH'], axis=1)
+        df['value'] = df['value'].astype(float)
+        dfs.append(df)
+    all_df = pd.concat(dfs, axis=1)
+    all_df.columns = ['original', 'anomaly', 'standardized']
+    all_df.index.name='time'
+    qbo = all_df.to_xarray()
+    qbo.attrs['name'] = 'qbo_cdas'
+    qbo.attrs['long_name'] = 'CDAS 50 mb zonal wind index'
+    qbo['standardized'].attrs = qbo.attrs
+    if savepath is not None:
+        qbo.to_netcdf(savepath / 'qbo_cdas_index.nc')
+        print_saved_file('qbo_cdas_index.nc', savepath)
+    return qbo
 
 
 def _produce_GHG(loadpath, savepath=None):
