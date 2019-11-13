@@ -1129,6 +1129,13 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
     return corr_da
 
 
+class Plot_type:
+    def __init__(self, ptype_dict):
+        self.plot_type = [x for x in ptype_dict.keys()][0]
+        self
+
+
+    
 def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
                       res_label=None, **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
