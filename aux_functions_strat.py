@@ -7,6 +7,17 @@ Created on Mon Oct 22 10:33:05 2018
 """
 
 
+def xr_reindex_with_date_range(ds, time_dim='time', drop=True, freq='MS'):
+    import pandas as pd
+    if drop:
+        ds = ds.dropna(time_dim)
+    start = pd.to_datetime(ds[time_dim].min().item())
+    end = pd.to_datetime(ds[time_dim].max().item())
+    new_time = pd.date_range(start, end, freq=freq)
+    ds = ds.reindex({time_dim: new_time})
+    return ds
+
+
 def path_glob(path, glob_str='*.nc', return_empty_list=False):
     """returns all the files with full path(pathlib3 objs) if files exist in
     path, if not, returns FilenotFoundErro"""
