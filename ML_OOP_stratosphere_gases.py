@@ -1131,12 +1131,12 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
 
 class Plot_type:
     def __init__(self, *rds, plot_key='predict', lat=None, lon=None,
-                 plevel=None, time=None, regressors=None, time_mean=None):
+                 level=None, time=None, regressors=None, time_mean=None):
         self.attrs = rds[0].attrs
-        self.plot_key = plot_key.split('_')
+        self.plot_key_list = plot_key.split('_')
         self.lat = lat
         self.lon = lon
-        self.plevel = plevel
+        self.level = level
         self.time = time
         self.rds_size = len(rds)
         self.time_dim = rds[0].attrs['sample_dim']
@@ -1147,90 +1147,93 @@ class Plot_type:
         self.plot_map = None
 
     def parse_field(self, rds):
-        plot_field = self.plot_key[0]
+        plot_field = self.plot_key_list[0]
         if plot_field == 'predict':
             self.field = ['original', 'predict', 'resid']
-            self.plot_type = 'time'
+            self.plot_type = 'sample'
         elif plot_field == 'r2':
             self.field = ['r2_adj']
             self.plot_type = 'error'
         elif plot_field == 'params':
-            self.field = 'params'
+            self.field = ['params']
             self.plot_type = 'feature'
         else:
-            self.field = [plot_field]
-        found = [x for x in self.field if x in rds.data_vars]
-        if not found:
-            raise Exception('field {} not in rds'.format(self.field))
-        self.field = found
-        return
+            self.field = [x for x in plot_field]
+        data = rds[self.field]
+        return data
 
     def parse_plot_key(self, rds):
-        if len(self.plot_key) == 2:
-            if self.plot_key[1] == 'map':
+        if len(self.plot_key_list) == 2:
+            if self.plot_key_list[1] == 'map':
                 self.plot_map = True
-            elif self.plot_key[1] == 'lat':
-                self.plot_map == False
+                self.lat_mean = False
+                self.lon_mean = False
+            elif self.plot_key_list[1] == 'lat':
+                self.plot_map = False
                 self.lon_mean = True
-            elif self.plot_key[1] == 'lon':
-                self.plot_map == False
+                self.lat_mean = False
+            elif self.plot_key_list[1] == 'lon':
+                self.plot_map = False
                 self.lat_mean = True
-            elif self.plot_key[1] == 'level':
-                self.plot_map == False
+                self.lon_mean = False
+            elif self.plot_key_list[1] == 'level':
+                self.plot_map = False
             else:
                 self.plot_map = False
         else:
-            self.plot_map = False
+            raise Exception('pls pick two items for plot_key e.g., predict_lat')
         self.lat_in_rds = 'lat' in rds.dims
         self.lon_in_rds = 'lon' in rds.dims
         if (not self.lat_in_rds or not self.lon_in_rds) and self.plot_map:
             raise Exception('lat or lon not in rds.dims and map requested')
-        if self.lat is None:
-            self.lat_mean = True
-        if self.lon is None:
-            self.lon_mean = True
+#        if self.lat is None and not self.plot_map:
+#            self.lat_mean = True
+#        if self.lon is None and not self.plot_map:
+#            self.lon_mean = True
         if not self.lon_in_rds:
             self.lon_mean = False
         if not self.lat_in_rds:
             self.lat_mean = False
 
-    def parse_level(self, rds):
-        self.level_in_rds = 'level' in rds.dims
-        if self.level_in_rds and self.plevel is not None:
-            self.plevel = rds['level'].sel(level=self.plevel, method='nearest')
-        elif self.level_in_rds and self.plevel is None:
-            self.plevel = rds['level']
-        elif self.level_in_rds and self.plevel is None and self.plot_map:
-            raise Exception('pls choose plevel')
-        self.plevel = self.plevel.values
-
-    def parse_time(self, rds):
-        if isinstance(self.time, str):
-            self.time = [self.time]
-        elif isinstance(self.time, list):
-            if len(self.time) == 1:
-                self.slice = False
-            elif len(self.time) == 2:
-                self.slice = True
-        else:
-            self.time = None
+    def parse_coord(self, rds, coord='time'):
+        self_coord = getattr(self, coord)
+        if self_coord is not None and coord in rds.dims:
+            if isinstance(self_coord, list):
+                if coord != 'time':
+                    self_coord = [float(x) for x in self_coord if x is not None]
+                else:
+                    self_coord = [str(x) for x in self_coord if x is not None]
+                setattr(self, coord, self_coord)
+                if len(self_coord) == 1:
+                    setattr(self, coord, self_coord[0])
+                    data = rds.sel({coord: self_coord}, method='nearest')
+                    setattr(self, coord, data[coord].sel({coord: self_coord}, method='nearest').values.item())
+                elif len(self_coord) == 2:
+                    data = rds.sel({coord: slice(*self_coord)})
+                    setattr(self, coord, [data[coord].sel({coord: x}, method='nearest').values.item() for x in self_coord])
+            else:
+                setattr(self, coord, str(self_coord))
+                data = rds.sel({coord: self_coord}, method='nearest')
+                setattr(self, coord, data[coord].sel({coord: self_coord}, method='nearest').values.item())
+            return data
+        elif coord not in rds.dims:
+            print('Warning: {} not in rds.dims'.format(coord))
+            return rds
+        elif self_coord is None:
+            return rds
 
     def prepare_to_plot_one_rds(self, rds):
         from aux_functions_strat import lat_mean
-        self.parse_field(rds)
+        data = self.parse_field(rds)
         self.parse_plot_key(rds)
-        self.parse_level(rds)
-        self.parse_time(rds)
+        data = self.parse_coord(data, self.time_dim)
+        data = self.parse_coord(data, 'lat')
+        data = self.parse_coord(data, 'lon')
+        data = self.parse_coord(data, 'level')
         for key, val in vars(self).items():
             print('{}: {}'.format(key, val))
-        if self.plot_type == 'time':
-            data = rds[self.field].to_array(dim='opr', name='name')
-            # choose time :
-            if self.time is not None:
-                if self.slice:
-                    data = data.sel({self.time_dim: slice(*self.time)})
-                else:
-                    data = data.sel({self.time_dim: self.time})
+        if self.plot_type == 'sample':
+            data = data.to_array(dim='opr', name='name')
             # choose time_mean:
             if self.time_mean is not None:
                 if self.time_mean == 'season':
@@ -1239,20 +1242,18 @@ class Plot_type:
         elif self.plot_type == 'feature':
             if self.regressors is not None:
                 data = data.sel({self.feature_dim: self.regressors})
-        # choose lat/lon or mean them:
+        # choose lat/lon mean them:
         if not self.plot_map:
-            if self.lat_mean and self.lat is None:
+            if self.lat_mean:
                 data = lat_mean(data)
-            else:
-                data = data.sel(lat=self.lat, method='nearest')
-            if self.lon_mean and self.lon is None:
+            if self.lon_mean:
                 data = data.mean('lon', keep_attrs=True)
-        # choose level:
-        data = data.sel(level=self.plevel)
         return data
+    
+    def show_options(self):
+        print('predict: ')
 
-
-def plot_like_results2(*results, plot_key='predict_level', plevel=None,
+def plot_like_results2(*results, plot_key='predict_level', level=None,
                        res_label=None, **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
     input: plot_type - dictionary of key:plot type, value - depending on plot,
@@ -1266,16 +1267,17 @@ def plot_like_results2(*results, plot_key='predict_level', plevel=None,
     import xarray as xr
     import pandas as pd
     import numpy as np
+    arg_dict = locals()
+    keys_to_remove = ['aux', 'np', 'pd', 'xr', 'mdates', 'ScalarFormatter',
+                      'plt', 'res_label', 'kwargs', 'results']
+    [arg_dict.pop(key) for key in keys_to_remove]
+    arg_dict.update(**kwargs)
+    p = Plot_type(*results, **arg_dict)
     if len(results) == 1:
-        keys_to_remove = ['aux', 'np', 'pd', 'xr', 'mdates', 'ScalarFormatter',
-                          'plt', 'res_label', 'kwargs', 'results']
-        arg_dict = locals()
-        [arg_dict.pop(key) for key in keys_to_remove]
-        arg_dict.pop('keys_to_remove')
         rds = results[0]
-        p = Plot_type(*results, **arg_dict)
         data = p.prepare_to_plot_one_rds(rds)
         return data
+        key = p.plot_key_list[0]
         if key == 'predict_by_level':
             # define plot kwargs:
             plt_kwargs = {'yscale': 'log', 'yincrease': False, 'cmap': 'bwr',
