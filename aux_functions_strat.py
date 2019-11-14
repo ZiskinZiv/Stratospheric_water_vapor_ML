@@ -697,8 +697,21 @@ def remove_nan_xr(data, just_geo=True, verbose=False):
     return
 
 
+def xr_transpose_dim_to_last_pos(da, last_dim='lat'):
+    """transpose an xarray dim to the last position so certain operations,
+    like matrix mul can be done"""
+    dims = [x for x in da.dims]
+    dim_idx = dims.index(last_dim)
+    if dim_idx != len(dims) - 1:
+        # check if not already last place
+        dims[dim_idx], dims[-1] = dims[-1], dims[dim_idx]
+        da = da.transpose(*dims)
+    return da
+
+
 def lat_mean(da, method='cos', dim='lat', copy_attrs=True):
     import numpy as np
+    da = xr_transpose_dim_to_last_pos(da, 'lat')
     if method == 'cos':
         weights = np.cos(np.deg2rad(da[dim].values))
         da_mean = (weights * da).sum(dim) / sum(weights)
