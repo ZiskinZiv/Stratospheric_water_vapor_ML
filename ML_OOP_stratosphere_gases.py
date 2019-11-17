@@ -1133,6 +1133,7 @@ class Plot_type:
     def __init__(self, *rds, plot_key='predict', lat=None, lon=None,
                  level=None, time=None, regressors=None, time_mean=None):
         self.attrs = rds[0].attrs
+        self.plot_key = plot_key
         self.plot_key_list = plot_key.split('_')
         self.lat = lat
         self.lon = lon
@@ -1157,6 +1158,9 @@ class Plot_type:
         elif plot_field == 'params':
             self.field = ['params']
             self.plot_type = 'feature'
+        elif plot_field == 'response':
+            self.field = ['X', 'params']
+            self.plot_type = 'response'
         else:
             self.field = [x for x in plot_field]
         data = rds[self.field]
@@ -1164,20 +1168,20 @@ class Plot_type:
 
     def parse_plot_key(self, rds):
         if len(self.plot_key_list) == 2:
+            self.lon_mean = False
+            self.lat_mean = False
             if self.plot_key_list[1] == 'map':
                 self.plot_map = True
-                self.lat_mean = False
-                self.lon_mean = False
             elif self.plot_key_list[1] == 'lat':
                 self.plot_map = False
                 self.lon_mean = True
-                self.lat_mean = False
             elif self.plot_key_list[1] == 'lon':
                 self.plot_map = False
                 self.lat_mean = True
-                self.lon_mean = False
             elif self.plot_key_list[1] == 'level':
                 self.plot_map = False
+                self.lat_mean = True
+                self.lon_mean = True
             else:
                 self.plot_map = False
         else:
@@ -1196,30 +1200,47 @@ class Plot_type:
             self.lat_mean = False
 
     def parse_coord(self, rds, coord='time'):
-        self_coord = getattr(self, coord)
-        if self_coord is not None and coord in rds.dims:
-            if isinstance(self_coord, list):
+        coord_val = getattr(self, coord)
+        if coord_val is not None and coord in rds.dims:
+            if isinstance(coord_val, list):
                 if coord != 'time':
-                    self_coord = [float(x) for x in self_coord if x is not None]
+                    coord_val = [float(x) for x in coord_val if x is not None]
                 else:
-                    self_coord = [str(x) for x in self_coord if x is not None]
-                setattr(self, coord, self_coord)
-                if len(self_coord) == 1:
-                    setattr(self, coord, self_coord[0])
-                    data = rds.sel({coord: self_coord}, method='nearest')
-                    setattr(self, coord, data[coord].sel({coord: self_coord}, method='nearest').values.item())
-                elif len(self_coord) == 2:
-                    data = rds.sel({coord: slice(*self_coord)})
-                    setattr(self, coord, [data[coord].sel({coord: x}, method='nearest').values.item() for x in self_coord])
+                    coord_val = [str(x) for x in coord_val if x is not None]
+                setattr(self, coord, coord_val)
+                if len(coord_val) == 1:
+                    setattr(self, coord, coord_val[0])
+                    data = rds.sel({coord: coord_val}, method='nearest')
+                    setattr(self, coord, data[coord].sel({coord: coord_val}, method='nearest').values.item())
+                elif len(coord_val) == 2:
+                    if coord != 'time':
+                        data = rds.sel({coord: slice(*coord_val)})
+                        setattr(self, coord, [data[coord].sel({coord: x}, method='nearest').values.item() for x in coord_val])
+                    else:
+                        import pandas as pd
+                        coord_val = [pd.to_datetime(x) for x in coord_val]
+                        data = rds.sel({coord: slice(*coord_val)})
+                        setattr(self, coord, [data[coord].sel({coord: x}, method='nearest').values for x in coord_val])
             else:
-                setattr(self, coord, str(self_coord))
-                data = rds.sel({coord: self_coord}, method='nearest')
-                setattr(self, coord, data[coord].sel({coord: self_coord}, method='nearest').values.item())
+                if coord != 'time':
+                    setattr(self, coord, str(coord_val))
+                    coord_val = getattr(self, coord)
+                    data = rds.sel({coord: coord_val}, method='nearest').squeeze()
+                    setattr(self, coord, data[coord].values.item())
+                else:
+                    import pandas as pd
+                    setattr(self, coord, str(coord_val))
+                    coord_val = getattr(self, coord)
+                    data = rds.sel({coord: coord_val}, method='nearest').squeeze()
+                    if data[self.time_dim].size <= 1:
+                        raise Exception('pls pick more than one time point')
+                    vals = [pd.to_datetime(x) for x in data[coord].sel({coord: coord_val}).values.tolist()]
+                    setattr(self, coord, vals)
             return data
         elif coord not in rds.dims:
             print('Warning: {} not in rds.dims'.format(coord))
             return rds
-        elif self_coord is None:
+        elif coord_val is None:
             return rds
 
     def prepare_to_plot_one_rds(self, rds):
@@ -1234,27 +1255,69 @@ class Plot_type:
             print('{}: {}'.format(key, val))
         if self.plot_type == 'sample':
             data = data.to_array(dim='opr', name='name')
+            # copy attrs:
+            for key, value in rds['original'].attrs.items():
+                data.attrs[key] = value
             # choose time_mean:
+            self.time = self.get_coord_limits(data, 'time')
             if self.time_mean is not None:
                 if self.time_mean == 'season':
                     grp = self.time_dim + '.' + self.time_mean
+                    attrs = data.attrs
                     data = data.groupby(grp).mean(self.time_dim)
+                    for key, value in attrs.items():
+                        data.attrs[key] = value
+#                elif self.time_mean == 'season' and data[self.time_dim].size < 4:
+#                    raise Exception('pls pick at least 4 months for season mean')
+#            elif self.time_mean is None and data[self.time_dim].size > 1:
+#                raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 1')
         elif self.plot_type == 'feature':
             if self.regressors is not None:
                 data = data.sel({self.feature_dim: self.regressors})
         # choose lat/lon mean them:
-        if not self.plot_map:
-            if self.lat_mean:
-                data = lat_mean(data)
-            if self.lon_mean:
-                data = data.mean('lon', keep_attrs=True)
+        # self.set_latlon_mean('lat')
+        # self.set_latlon_mean('lon')
+        if self.lat_mean and not isinstance(self.lat, float):
+            self.lat = self.get_coord_limits(data, 'lat')
+            data = lat_mean(data)
+        else:
+            self.lat_mean = False
+        if self.lon_mean and not isinstance(self.lon, float):
+            self.lon = self.get_coord_limits(data, 'lon')
+            data = data.mean('lon', keep_attrs=True)
+        else:
+            self.lon_mean = False
         return data
-    
+
+    def get_coord_limits(self, rds, coord):
+        coord_val = getattr(self, coord)
+        if coord == 'time':
+            try:
+                mini = rds[coord].min().dt.strftime('%Y-%m').values.item()
+                maxi = rds[coord].max().dt.strftime('%Y-%m').values.item()
+            except KeyError:
+                return None
+        else:
+            try:
+                mini = rds[coord].min().values.item()
+                maxi = rds[coord].max().values.item()
+            except KeyError:
+                return None
+        setattr(self, coord, [mini, maxi])
+        coord_val = getattr(self, coord)
+        return coord_val
+
+    def set_latlon_mean(self, coord='lat'):
+        coord_val = getattr(self, coord)
+        if not isinstance(coord_val, list) and coord_val is not None:
+            setattr(self, '{}_mean'.format(coord), False)
+
     def show_options(self):
         print('predict: ')
 
-def plot_like_results2(*results, plot_key='predict_level', level=None,
-                       res_label=None, **kwargs):
+
+def plot_like_results(*results, plot_key='predict_level', level=None,
+                      res_label=None, **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
     input: plot_type - dictionary of key:plot type, value - depending on plot,
     e.g., plot_type={'predict_by_lat': 82} will plot prediction + original +
@@ -1276,170 +1339,139 @@ def plot_like_results2(*results, plot_key='predict_level', level=None,
     if len(results) == 1:
         rds = results[0]
         data = p.prepare_to_plot_one_rds(rds)
-        return data
         key = p.plot_key_list[0]
-        if key == 'predict_by_level':
-            # define plot kwargs:
+        geo_key = p.plot_key_list[1]
+        # if key == 'predict_by_level':
+        if key == 'predict':
             plt_kwargs = {'yscale': 'log', 'yincrease': False, 'cmap': 'bwr',
-                          'figsize': (15, 10), 'add_colorbar': False,
-                          'extend': 'both'}
-            # transform into array:
-            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
-                                                                 name='name')
-            # copy attrs to new da:
-            for key, value in rds['original'].attrs.items():
-                da.attrs[key] = value
-            if val == 'mean':
-                label_add = ', area mean of latitudes: ' +\
-                             str(da.lat.min().values) + ' to ' + \
-                             str(da.lat.max().values)
-                da = aux.xr_weighted_mean(da)
-            else:
-                da = da.sel(lat=val, method='nearest')
-                label_add = ' at lat=' + str(da.lat.values.item())
-            # cmap_max = abs(max(abs(da.sel(opr='original').min().values),
-            #                    abs(da.sel(opr='original').max().values)))
-            da = da.reindex({'time': pd.date_range(da.time[0].values,
-                                                   da.time[-1].values,
-                                                   freq='MS')})
-            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
-            plt_kwargs.update(kwargs)
-            fg = da.T.plot.contourf(row='opr', **plt_kwargs)
-            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-            fg.add_colorbar(
-                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
-                format='%0.3f')
-            fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
-#            cb = con.colorbar
-#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
-            labels = [' original', ' reconstructed', ' residuals']
-            for i, ax in enumerate(fg.axes.flat):
-                ax.set_title(da.attrs['long_name'] + labels[i] + label_add,
-                             loc='center')
-            # plt_kwargs.update({'extend': 'both'})
-            ax = [ax for ax in fg.axes.flat][2]
-            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
-            # [ax.invert_yaxis() for ax in con.ax.figure.axes]
-            [ax.invert_yaxis() for ax in fg.axes.flat]
-#            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
-#             con.ax.figure.axes]
-            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
-             fg.axes.flat]
-            # [ax.xaxis.grid(True, which='minor') for ax in con.ax.figure.axes]
-            plt.minorticks_on()
-            ax.xaxis.set_minor_locator(mdates.YearLocator())
-            ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
-            plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
-            # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
-            plt.show()
-            return fg
-        elif key == 'predict_map_by_time_level':
-            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
-                          'add_colorbar': False,
-                          'extend': 'both'}
-            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
-            plt_kwargs.update(kwargs)
-            # transform into array:
-            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
-                                                                name='name')
-            if 'lon' not in da.dims:
-                raise KeyError('no lon in dims!')
-            # copy attrs to new da:
-            for key, value in rds['original'].attrs.items():
-                da.attrs[key] = value
-            if len(val) == 1:
-                date = val[0]
-                suptitle = 'time= {}'.format(date)
-                da = da.sel(time=date, method='nearest').squeeze(drop=True)
-                # fg = da.plot.contourf(col='opr',row='level', **plt_kwargs)
-                fg = da.plot.contourf(col='opr', **plt_kwargs)
-            elif len(val) == 2:
-                # seasonal mean of at least a year:
-                date = val[0]
-                plevel = val[1]
-                suptitle = 'level= {} hPa, year= {}'.format(plevel, date)
-                da = da.sel(time=date, level=plevel, method='nearest').squeeze()
-                da_seasons = da.groupby('time.season').mean('time')
-                fg = da_seasons.plot.contourf(row='season', col='opr', **plt_kwargs)
-            elif len(val) == 3:
-                min_time = val[0]
-                max_time = val[1]
-                plevel = val[2]
-                suptitle = 'level= {} hPa, time= {} to {}'.format(plevel, min_time, max_time)
-                da = da.sel(time=slice(min_time, max_time))
-                da = da.sel(level=plevel, method='nearest').squeeze()
-                # da_seasons = da.groupby('time.season').mean('time')
-                fg = da.plot.contourf(row='time', col='opr', **plt_kwargs)
-            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-            fg.add_colorbar(
-                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
-                format='%0.3f')
-            fg.fig.suptitle(suptitle, fontsize=12, fontweight=750)
-#            cb = con.colorbar
-#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
-            labels = [' original', ' reconstructed', ' residuals']
-            try:
+                              'figsize': (15, 10), 'add_colorbar': False,
+                              'extend': 'both'}
+            if geo_key == 'level':
+                if p.lat is not None:
+                    label_add = ' at lat={}'.format(p.lat)
+                else:
+                    if p.lat_mean:
+                        label_add = ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                    if p.lon_mean:
+                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p,lon[1])
+                data = aux.xr_reindex_with_date_range(data, time_dim='time',
+                                                      drop=True, freq='MS')
+                plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+                plt_kwargs.update(kwargs)
+                fg = data.T.plot.contourf(row='opr', **plt_kwargs)
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
+                    format='%0.3f')
+                fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
+    #            cb = con.colorbar
+    #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+                labels = [' original', ' reconstructed', ' residuals']
                 for i, ax in enumerate(fg.axes.flat):
-                    ax.set_title(da.attrs['long_name'] + labels[i], loc='center')
-            except IndexError:
-                pass
-            # plt_kwargs.update({'extend': 'both'})
-            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
-            plt.show()
-            return fg
-        elif key == 'predict_map_by_level':
-            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
-                          'add_colorbar': False,
-                          'extend': 'both'}
-            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
-            plt_kwargs.update(kwargs)
-            # transform into array:
-            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
-                                                                name='name')
-            if 'lon' not in da.dims:
-                raise KeyError('no lon in dims!')
-            # copy attrs to new da:
-            for key, value in rds['original'].attrs.items():
-                da.attrs[key] = value
-            if len(val) == 2:
-                plevel = val[0]
-                if val[1] == 'lat_mean':
-                    from aux_functions_strat import lat_mean
-                    label_add = ', area mean of latitudes: ' +\
-                        str(da.lat.min().values) + ' to ' + \
-                        str(da.lat.max().values)
-                    da = lat_mean(da)
-                    suptitle = 'level= {} hPa'.format(plevel)
-                    da = da.sel(level=plevel, method='nearest').squeeze()
-                elif val[1] == 'lon_mean':
-                    label_add = ', area mean of longitudes: ' +\
-                        str(da.lon.min().values) + ' to ' + \
-                        str(da.lon.max().values)
-                    da = da.mean('lon', keep_attrs=True)
-                    suptitle = 'level= {} hPa'.format(plevel)
-                    da = da.sel(level=plevel, method='nearest').squeeze()
-            else:
-                raise KeyError('pls choose level and either lon_mean or lat_mean')
-            fg = da.T.plot.contourf(row='opr', **plt_kwargs)
-            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-            fg.add_colorbar(
-                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
-                format='%0.3f')
-            fg.fig.suptitle(suptitle, fontsize=12, fontweight=750)
-#            cb = con.colorbar
-#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
-            labels = [' original', ' reconstructed', ' residuals']
-            try:
-                for i, ax in enumerate(fg.axes.flat):
-                    ax.set_title(da.attrs['long_name'] + labels[i] + label_add,
+                    ax.set_title(data.attrs['long_name'] + labels[i] + label_add,
                                  loc='center')
-            except IndexError:
-                pass
-            # plt_kwargs.update({'extend': 'both'})
-            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
-            plt.show()
-            return fg
+                # plt_kwargs.update({'extend': 'both'})
+                ax = [ax for ax in fg.axes.flat][2]
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                # [ax.invert_yaxis() for ax in con.ax.figure.axes]
+                [ax.invert_yaxis() for ax in fg.axes.flat]
+    #            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+    #             con.ax.figure.axes]
+                [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+                 fg.axes.flat]
+                # [ax.xaxis.grid(True, which='minor') for ax in con.ax.figure.axes]
+                plt.minorticks_on()
+                ax.xaxis.set_minor_locator(mdates.YearLocator())
+                ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
+                plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
+                # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
+                plt.show()
+                return fg
+            elif geo_key == 'lat' or geo_key == 'lon':
+                label_add = ''
+                if p.level is not None:
+                    label_add = ' at level= {:.2f} hPa'.format(p.level)
+                else:
+                    raise Exception('pls pick a level for this plot')
+                if geo_key == 'lat':
+                    if p.lon is not None and not p.lon_mean:
+                        label_add = ' at lon={}'.format(p.lon)
+                    elif p.lon_mean:
+                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p.lon[1])
+                elif geo_key == 'lon':
+                    if p.lat is not None and not p.lat_mean:
+                        label_add = ' at lat={}'.format(p.lat)
+                    elif p.lat_mean:
+                        label_add += ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                data = aux.xr_reindex_with_date_range(data, time_dim='time',
+                                                      drop=True, freq='MS')
+                plt_kwargs.update({'center': 0.0, 'levels': 41})
+                plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
+                plt_kwargs.update(kwargs)
+                fg = data.T.plot.contourf(row='opr', **plt_kwargs)
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
+                    format='%0.3f')
+                fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
+    #            cb = con.colorbar
+    #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+                labels = [' original', ' reconstructed', ' residuals']
+                for i, ax in enumerate(fg.axes.flat):
+                    ax.set_title(data.attrs['long_name'] + labels[i] + label_add,
+                                 loc='center')
+                # plt_kwargs.update({'extend': 'both'})
+                ax = [ax for ax in fg.axes.flat][2]
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                # [ax.xaxis.grid(True, which='minor') for ax in con.ax.figure.axes]
+                plt.minorticks_on()
+                ax.xaxis.set_minor_locator(mdates.YearLocator())
+                ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
+                plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
+                # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
+                plt.show()
+                return fg
+            elif geo_key == 'map':
+                label_add = data.attrs['long_name']
+                if p.level is not None:
+                    label_add += ' at level= {:.2f} hPa'.format(p.level)
+                else:
+                    raise Exception('pls pick a level for this plot')
+                plt_kwargs.update({'center': 0.0, 'levels': 41})
+                plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
+                plt_kwargs.update(kwargs)
+                if p.time is not None and p.time_mean == 'season':
+                    # rds = p.parse_coord(rds, 'time')
+                    label_add += ', for times {} to {}'.format(p.time[0],
+                                                                p.time[1])
+                    fg = data.plot.contourf(row='season', col='opr',
+                                            **plt_kwargs)
+                elif p.time is not None and p.time_mean is None:
+                    label_add += ', for times {} to {}'.format(p.time[0],
+                                                                p.time[1])
+                    fg = data.plot.contourf(row='time', col='opr', **plt_kwargs)
+                elif p.time is None:
+                    raise Exception('pls pick a specific time or time range for this plot')
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
+                    format='%0.3f')
+                # suptitle = 'time= {}'.format(date)
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+    #            cb = con.colorbar
+    #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+                labels = [' original', ' reconstructed', ' residuals']
+                try:
+                    for i, ax in enumerate(fg.axes.flat):
+                        ax.set_title(data.attrs['long_name'] + labels[i], loc='center')
+                except IndexError:
+                    pass
+                # plt_kwargs.update({'extend': 'both'})
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                plt.show()
+                return fg
         elif key == 'params_map_by_level':
             plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
                           'add_colorbar': False,
@@ -1475,56 +1507,7 @@ def plot_like_results2(*results, plot_key='predict_level', level=None,
             fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
             plt.show()
             return fg
-        elif key == 'predict_by_lat':
-            # define plot kwargs:
-            plt_kwargs = {'cmap': 'bwr',
-                          'figsize': (15, 10), 'add_colorbar': False,
-                          'extend': 'both'}
-            # transform into array:
-            da = rds[['original', 'predict', 'resid']].to_array(dim='opr',
-                                                                 name='name')
-            # copy attrs to new da:
-            for key, value in rds['original'].attrs.items():
-                da.attrs[key] = value
-#            if val == 'mean':
-#                label_add = ', area mean of latitudes: ' +\
-#                             str(da.lat.min().values) + ' to ' + \
-#                             str(da.lat.max().values)
-#                da = aux.xr_weighted_mean(da)
-#            else:
-            da = da.sel(level=val, method='nearest')
-            label_add = ' at level= {:.2f} hPa'.format(da.level.values.item())
-            # cmap_max = abs(max(abs(da.sel(opr='original').min().values),
-            #                    abs(da.sel(opr='original').max().values)))
-            da = da.reindex({'time': pd.date_range(da.time[0].values,
-                                                   da.time[-1].values,
-                                                   freq='MS')})
-            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
-            plt_kwargs.update(kwargs)
-            fg = da.T.plot.contourf(row='opr', **plt_kwargs)
-            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-            fg.add_colorbar(
-                cax=cbar_ax, orientation="horizontal", label=da.attrs['units'],
-                format='%0.3f')
-            fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
-#            cb = con.colorbar
-#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
-            labels = [' original', ' reconstructed', ' residuals']
-            for i, ax in enumerate(fg.axes.flat):
-                ax.set_title(da.attrs['long_name'] + labels[i] + label_add,
-                             loc='center')
-            # plt_kwargs.update({'extend': 'both'})
-            ax = [ax for ax in fg.axes.flat][2]
-            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
-            # [ax.xaxis.grid(True, which='minor') for ax in con.ax.figure.axes]
-            plt.minorticks_on()
-            ax.xaxis.set_minor_locator(mdates.YearLocator())
-            ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
-            plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
-            plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
-            # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
-            plt.show()
-            return fg
+
         elif key == 'r2_by_level':
             plt_kwargs = {'cmap': 'viridis', 'figsize': (6, 8),
                           'levels': 41, 'vmin': 0.0}
@@ -1574,8 +1557,9 @@ def plot_like_results2(*results, plot_key='predict_level', level=None,
             fg.fig.suptitle('R^2 adjusted', fontsize=12, fontweight=750)
             plt.show()
             return fg
-        
-def plot_like_results(*results, plot_type={'predict_by_level': 'mean'},
+
+
+def plot_like_results_decrapeted(*results, plot_type={'predict_by_level': 'mean'},
                       res_label=None, **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
     input: plot_type - dictionary of key:plot type, value - depending on plot,
