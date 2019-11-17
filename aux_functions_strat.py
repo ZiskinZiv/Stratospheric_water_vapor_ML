@@ -709,15 +709,27 @@ def xr_transpose_dim_to_last_pos(da, last_dim='lat'):
     return da
 
 
-def lat_mean(da, method='cos', dim='lat', copy_attrs=True):
+def lat_mean(xarray, method='cos', dim='lat', copy_attrs=True):
     import numpy as np
-    da = xr_transpose_dim_to_last_pos(da, 'lat')
-    if method == 'cos':
-        weights = np.cos(np.deg2rad(da[dim].values))
-        da_mean = (weights * da).sum(dim) / sum(weights)
-    if copy_attrs:
-        da_mean.attrs = da.attrs
-    return da_mean
+    import xarray as xr
+
+    def mean_single_da(da):
+        if dim not in da.dims:
+            return da
+        if method == 'cos':
+            weights = np.cos(np.deg2rad(da[dim].values))
+            da_mean = (weights * da).sum(dim) / sum(weights)
+        if copy_attrs:
+            da_mean.attrs = da.attrs
+        return da_mean
+
+    xarray = xr_transpose_dim_to_last_pos(xarray, 'lat')
+    if isinstance(xarray, xr.DataArray):
+        xarray = mean_single_da(xarray)
+    elif isinstance(xarray, xr.Dataset):
+        for name, da in xarray.data_vars.items():
+            xarray[name] = mean_single_da(da)
+    return xarray
 
 
 def desc_nan(data, verbose=True):
