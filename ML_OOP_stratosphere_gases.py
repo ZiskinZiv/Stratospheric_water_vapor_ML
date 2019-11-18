@@ -1131,7 +1131,8 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
 
 class Plot_type:
     def __init__(self, *rds, plot_key='predict', lat=None, lon=None,
-                 level=None, time=None, regressors=None, time_mean=None):
+                 level=None, time=None, regressors=None, time_mean=None,
+                 **kwargs):
         self.attrs = rds[0].attrs
         self.plot_key = plot_key
         self.plot_key_list = plot_key.split('_')
@@ -1146,9 +1147,11 @@ class Plot_type:
         self.regressors = regressors
         self.time_mean = time_mean
         self.plot_map = None
+        self.kwargs = kwargs
 
     def parse_field(self, rds):
         plot_field = self.plot_key_list[0]
+        # TODO: implement more fields such as pvalues, dw etc..
         if plot_field == 'predict':
             self.field = ['original', 'predict', 'resid']
             self.plot_type = 'sample'
@@ -1162,8 +1165,12 @@ class Plot_type:
             self.field = ['X', 'params']
             self.plot_type = 'response'
         else:
+            self.show_options()
             self.field = [x for x in plot_field]
-        data = rds[self.field]
+        if len(self.field) == 1:
+            data = rds[self.field[0]]
+        else:
+            data = rds[self.field]
         return data
 
     def parse_plot_key(self, rds):
@@ -1172,18 +1179,21 @@ class Plot_type:
             self.lat_mean = False
             if self.plot_key_list[1] == 'map':
                 self.plot_map = True
-            elif self.plot_key_list[1] == 'lat':
+            elif self.plot_key_list[1] == 'lat-time' or self.plot_key_list[1] =='level-lat':
                 self.plot_map = False
                 self.lon_mean = True
-            elif self.plot_key_list[1] == 'lon':
+            elif self.plot_key_list[1] == 'lon-time' or self.plot_key_list[1] =='level-lon':
                 self.plot_map = False
                 self.lat_mean = True
-            elif self.plot_key_list[1] == 'level':
+            elif self.plot_key_list[1] == 'level-time':
                 self.plot_map = False
                 self.lat_mean = True
                 self.lon_mean = True
             else:
                 self.plot_map = False
+                self.show_options()
+            if 'level' in self.plot_key_list[1]:
+                self.level = None
         else:
             raise Exception('pls pick two items for plot_key e.g., predict_lat')
         self.lat_in_rds = 'lat' in rds.dims
@@ -1269,8 +1279,8 @@ class Plot_type:
                         data.attrs[key] = value
 #                elif self.time_mean == 'season' and data[self.time_dim].size < 4:
 #                    raise Exception('pls pick at least 4 months for season mean')
-#            elif self.time_mean is None and data[self.time_dim].size > 1:
-#                raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 1')
+            elif self.time_mean is None and data[self.time_dim].size > 3 and self.plot_map:
+                raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
         elif self.plot_type == 'feature':
             if self.regressors is not None:
                 data = data.sel({self.feature_dim: self.regressors})
@@ -1313,7 +1323,10 @@ class Plot_type:
             setattr(self, '{}_mean'.format(coord), False)
 
     def show_options(self):
-        print('predict: ')
+        from aux_functions_strat import text_blue, text_green
+        print('Available options for main plot_key:')
+        text_blue('predict: ', end='')
+        print('Original and reconstructed time-series and residuals:')
 
 
 def plot_like_results(*results, plot_key='predict_level', level=None,
@@ -1330,9 +1343,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
     import xarray as xr
     import pandas as pd
     import numpy as np
+    import warnings
+    warnings.filterwarnings("ignore")
     arg_dict = locals()
     keys_to_remove = ['aux', 'np', 'pd', 'xr', 'mdates', 'ScalarFormatter',
-                      'plt', 'res_label', 'kwargs', 'results']
+                      'plt', 'res_label', 'results', 'warnings']
     [arg_dict.pop(key) for key in keys_to_remove]
     arg_dict.update(**kwargs)
     p = Plot_type(*results, **arg_dict)
@@ -1346,7 +1361,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
             plt_kwargs = {'yscale': 'log', 'yincrease': False, 'cmap': 'bwr',
                               'figsize': (15, 10), 'add_colorbar': False,
                               'extend': 'both'}
-            if geo_key == 'level':
+            if geo_key == 'level-time':
                 if p.lat is not None:
                     label_add = ' at lat={}'.format(p.lat)
                 else:
@@ -1388,18 +1403,18 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
                 plt.show()
                 return fg
-            elif geo_key == 'lat' or geo_key == 'lon':
+            elif geo_key == 'lat-time' or geo_key == 'lon-time':
                 label_add = ''
                 if p.level is not None:
                     label_add = ' at level= {:.2f} hPa'.format(p.level)
                 else:
                     raise Exception('pls pick a level for this plot')
-                if geo_key == 'lat':
+                if geo_key == 'lat-time':
                     if p.lon is not None and not p.lon_mean:
                         label_add = ' at lon={}'.format(p.lon)
                     elif p.lon_mean:
                         label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p.lon[1])
-                elif geo_key == 'lon':
+                elif geo_key == 'lon-time':
                     if p.lat is not None and not p.lat_mean:
                         label_add = ' at lat={}'.format(p.lat)
                     elif p.lat_mean:
@@ -1472,55 +1487,96 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
                 plt.show()
                 return fg
-        elif key == 'params_map_by_level':
+        elif key == 'params':
             plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
                           'add_colorbar': False,
                           'extend': 'both'}
             plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
-            plt_kwargs.update(kwargs)
-            # transform into array:
-            da = rds['params']
-            if 'lon' not in da.dims:
-                raise KeyError('no lon in dims!')
-            # copy attrs to new da:
-            if len(val) == 1:
-                plevel = val[0]
-                suptitle = 'level= {} hPa'.format(plevel)
-                da = da.sel(level=plevel, method='nearest').squeeze()
-                fg = da.plot.contourf(col='regressors', **plt_kwargs)
-            else:
-                # seasonal mean of at least a year:
-                plevel = val[0]
-                flist = val[1]
-                suptitle = 'level= {} hPa'.format(plevel)
-                da = da.sel(level=plevel, method='nearest').squeeze()
-                da = da.sel(regressors=flist).squeeze()
-                fg = da.plot.contourf(col='regressors', **plt_kwargs)
-            cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-            fg.add_colorbar(
-                cax=cbar_ax, orientation="horizontal", label='coeff',
-                format='%0.3f')
-            fg.fig.suptitle(suptitle, fontsize=12, fontweight=750)
-#            cb = con.colorbar
-#            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
-            # plt_kwargs.update({'extend': 'both'})
-            fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
-            plt.show()
-            return fg
-
-        elif key == 'r2_by_level':
+            label_add = r'$\beta$ coefficients'
+            if geo_key == 'map':
+                plt_kwargs.update(kwargs)
+                if p.level is not None:
+                    label_add += ' at level= {:.2f} hPa'.format(p.level)
+                else:
+                    raise Exception('pls pick a level for this plot')
+                fg = data.plot.contourf(col='regressors', **plt_kwargs)
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label='coeff',
+                    format='%0.3f')
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+    #            cb = con.colorbar
+    #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+                # plt_kwargs.update({'extend': 'both'})
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                plt.show()
+                return fg
+            elif geo_key == 'level-lat' or geo_key == 'level-lon':
+                if geo_key == 'level-lat':
+                    if p.lon is not None and not p.lon_mean:
+                        label_add += ' at lon={}'.format(p.lon)
+                    elif p.lon_mean:
+                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p.lon[1])
+                elif geo_key == 'level-lon':
+                    if p.lat is not None and not p.lat_mean:
+                        label_add += ' at lat={}'.format(p.lat)
+                    elif p.lat_mean:
+                        label_add += ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                plt_kwargs.update({'yscale': 'log', 'yincrease': False})
+                plt_kwargs.update(kwargs)
+                fg = data.plot.contourf(col='regressors', **plt_kwargs)
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label='coeff',
+                    format='%0.3f')
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+                ax = [ax for ax in fg.axes.flat][2]
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                # [ax.invert_yaxis() for ax in con.ax.figure.axes]
+                [ax.invert_yaxis() for ax in fg.axes.flat]
+                [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+                 fg.axes.flat]
+    #            cb = con.colorbar
+    #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+                # plt_kwargs.update({'extend': 'both'})
+                plt.show()
+                return fg
+        elif key == 'r2':
+            label_add = r'$R^2$ Adjusted'
             plt_kwargs = {'cmap': 'viridis', 'figsize': (6, 8),
-                          'levels': 41, 'vmin': 0.0}
-            plevel = val
-            da = rds['r2_adj'].sel(level=plevel, method='nearest')
-            if 'lon' not in da.dims:
-                raise KeyError('no lon in dims!')
-            plt_kwargs.update(kwargs)
-            fg = da.plot.contourf(**plt_kwargs)
-            fg.ax.figure.suptitle('R^2 adjusted', fontsize=12, fontweight=750)
-            fg.ax.set_title('level = {:.2f} hPa'.format(plevel))
-            plt.show()
-            return fg
+                          'yincrease': False, 'levels': 41, 'vmin': 0.0,
+                          'yscale': 'log'}
+            if geo_key == 'level-lat' or geo_key == 'level-lon':
+                if geo_key == 'level-lat':
+                    if p.lon is not None and not p.lon_mean:
+                        label_add += ' at lon={}'.format(p.lon)
+                    elif p.lon_mean:
+                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p.lon[1])
+                elif geo_key == 'level-lon':
+                    if p.lat is not None and not p.lat_mean:
+                        label_add += ' at lat={}'.format(p.lat)
+                    elif p.lat_mean:
+                        label_add += ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                plt_kwargs.update(kwargs)
+                fg = data.plot.contourf(**plt_kwargs)
+                fg.ax.set_title(label_add, fontsize=12, fontweight=750)
+                fg.ax.figure.axes[0].invert_yaxis()
+                fg.ax.figure.axes[0].yaxis.set_major_formatter(ScalarFormatter())
+                fg.ax.figure.subplots_adjust(bottom=0.1, top=0.95, left=0.1)
+                plt.show()
+                return fg
+            elif geo_key == 'map':
+                if p.level is not None:
+                    label_add += ' at level= {:.2f} hPa'.format(p.level)
+                else:
+                    raise Exception('pls pick a level for this plot')
+                plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
+                plt_kwargs.update(kwargs)
+                fg = data.plot.contourf(**plt_kwargs)
+                fg.ax.set_title(label_add, fontsize=12, fontweight=750)
+                fg.ax.figure.subplots_adjust(bottom=0.1, top=0.95, left=0.1)
+                plt.show()
+                return fg
     elif len(results) > 1:
         if key == 'r2':
             plt_kwargs = {'yscale': 'log', 'yincrease': False,
