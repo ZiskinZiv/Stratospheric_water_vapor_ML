@@ -7,6 +7,40 @@ Created on Mon Oct 22 10:33:05 2018
 """
 
 
+def query_yes_no(question, default="no"):
+    """Ask a yes/no question via raw_input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is True for "yes" or False for "no".
+    """
+    import sys
+    valid = {"yes": True, "y": True, "ye": True,
+             "no": False, "n": False}
+    if default is None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "
+                             "(or 'y' or 'n').\n")
+
+
 def xr_reindex_with_date_range(ds, time_dim='time', drop=True, freq='MS'):
     import pandas as pd
     if drop:
@@ -370,24 +404,29 @@ def xvar(da, dim):
     return temp.mean(dim)
 
 
+def text_white_underline(x, **kwargs):
+    from termcolor import colored
+    return colored(x, None, attrs=['bold', 'underline'], **kwargs)
+
+
 def text_red(x, **kwargs):
-    from termcolor import cprint
-    return cprint(x, 'red', attrs=['bold'], **kwargs)
+    from termcolor import colored
+    return colored(x, 'red', attrs=['bold'], **kwargs)
 
 
 def text_blue(x, **kwargs):
-    from termcolor import cprint
-    return cprint(x, 'blue', attrs=['bold'], **kwargs)
+    from termcolor import colored
+    return colored(x, 'blue', attrs=['bold'], **kwargs)
 
 
 def text_green(x, **kwargs):
-    from termcolor import cprint
-    return cprint(x, 'green', attrs=['bold'], **kwargs)
+    from termcolor import colored
+    return colored(x, 'green', attrs=['bold'], **kwargs)
 
 
 def text_yellow(x, **kwargs):
-    from termcolor import cprint
-    return cprint(x, 'yellow', attrs=['bold'], **kwargs)
+    from termcolor import colored
+    return colored(x, 'yellow', attrs=['bold'], **kwargs)
 
 
 def get_all_reg_combinations(dataset):
