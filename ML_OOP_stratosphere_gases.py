@@ -1165,8 +1165,7 @@ class Plot_type:
             self.field = ['X', 'params']
             self.plot_type = 'response'
         else:
-            self.show_options()
-            self.field = [x for x in plot_field]
+            return
         if len(self.field) == 1:
             data = rds[self.field[0]]
         else:
@@ -1195,6 +1194,7 @@ class Plot_type:
             if 'level' in self.plot_key_list[1]:
                 self.level = None
         else:
+            self.show_options()
             raise Exception('pls pick two items for plot_key e.g., predict_lat')
         self.lat_in_rds = 'lat' in rds.dims
         self.lon_in_rds = 'lon' in rds.dims
@@ -1255,38 +1255,47 @@ class Plot_type:
 
     def prepare_to_plot_one_rds(self, rds):
         from aux_functions_strat import lat_mean
+        from aux_functions_strat import query_yes_no
         data = self.parse_field(rds)
         self.parse_plot_key(rds)
         data = self.parse_coord(data, self.time_dim)
         data = self.parse_coord(data, 'lat')
         data = self.parse_coord(data, 'lon')
         data = self.parse_coord(data, 'level')
-        for key, val in vars(self).items():
-            print('{}: {}'.format(key, val))
+#        for key, val in vars(self).items():
+#            print('{}: {}'.format(key, val))
         if self.plot_type == 'sample':
             data = data.to_array(dim='opr', name='name')
-            # copy attrs:
-            for key, value in rds['original'].attrs.items():
-                data.attrs[key] = value
-            # choose time_mean:
             self.time = self.get_coord_limits(data, 'time')
-            if self.time_mean is not None:
-                if self.time_mean == 'season':
-                    grp = self.time_dim + '.' + self.time_mean
-                    attrs = data.attrs
-                    data = data.groupby(grp).mean(self.time_dim)
-                    for key, value in attrs.items():
-                        data.attrs[key] = value
-#                elif self.time_mean == 'season' and data[self.time_dim].size < 4:
-#                    raise Exception('pls pick at least 4 months for season mean')
-            elif self.time_mean is None and data[self.time_dim].size > 3 and self.plot_map:
-                raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
+            # choose time_mean:
+            self.parse_time_mean(data)
         elif self.plot_type == 'feature':
+            # choose regressors:
             if self.regressors is not None:
                 data = data.sel({self.feature_dim: self.regressors})
+            if data[self.feature_dim].size > 5:
+                ok = query_yes_no('regressors in data > 5, continue?')
+                if not ok:
+                    return
+        elif self.plot_type == 'response':
+            # choose regressors:
+            if self.regressors is not None:
+                data = data.sel({self.feature_dim: self.regressors})
+            if data[self.feature_dim].size > 5:
+                ok = query_yes_no('regressors in data > 5, continue?')
+                if not ok:
+                    return
+            # create the response:
+            data = data.params * data.X
+            self.time = self.get_coord_limits(data, 'time')
+            # choose time_mean:
+            data = self.parse_time_mean(data)
         # choose lat/lon mean them:
         # self.set_latlon_mean('lat')
         # self.set_latlon_mean('lon')
+        # copy attrs:
+        for key, value in rds['original'].attrs.items():
+            data.attrs[key] = value
         if self.lat_mean and not isinstance(self.lat, float):
             self.lat = self.get_coord_limits(data, 'lat')
             data = lat_mean(data)
@@ -1317,16 +1326,56 @@ class Plot_type:
         coord_val = getattr(self, coord)
         return coord_val
 
-    def set_latlon_mean(self, coord='lat'):
-        coord_val = getattr(self, coord)
-        if not isinstance(coord_val, list) and coord_val is not None:
-            setattr(self, '{}_mean'.format(coord), False)
+    def parse_time_mean(self, rds):
+        if self.time_mean is not None:
+            grp = self.time_dim + '.' + self.time_mean
+            attrs = rds.attrs
+            data = rds.groupby(grp).mean(self.time_dim)
+            for key, value in attrs.items():
+                data.attrs[key] = value
+            return data
+        elif self.time_mean is None and data[self.time_dim].size > 3 and self.plot_map:
+            raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
+#    def set_latlon_mean(self, coord='lat'):
+#        coord_val = getattr(self, coord)
+#        if not isinstance(coord_val, list) and coord_val is not None:
+#            setattr(self, '{}_mean'.format(coord), False)
 
     def show_options(self):
-        from aux_functions_strat import text_blue, text_green
-        print('Available options for main plot_key:')
-        text_blue('predict: ', end='')
-        print('Original and reconstructed time-series and residuals:')
+        from aux_functions_strat import text_blue, text_green, text_yellow, text_white_underline
+        print(text_white_underline('Available options for main plot_key='),
+              text_blue(' main-key'), '_', text_green('geo-key'))
+        print(
+            text_blue('predict: '),
+            'Original and reconstructed time-series and residuals with geo-keys:')
+        print(text_green('  level-time: '), 'a pressure level vs. time plot.')
+        print(text_green('  lat-time: '), 'a latitude vs. time plot.')
+        print(text_green('  lon-time: '), 'a longitude vs. time plot.')
+        print(text_green('  map: '), 'a longitude vs. latitude plot.')
+        print(text_blue('params: '), 'beta coeffs with geo-keys:')
+        print(text_green('  level-lat: '),
+              'a pressure level vs. latitude plot of each regressor.')
+        print(text_green('  level-lon: '),
+              'a pressure level vs. longitude plot of each regressor.')
+        print(
+            text_green('  map: '),
+            'a longitude vs. latitude plot of each regressor.')
+        print(text_blue('r2: '), 'Adjusted R^2 with geo-keys:')
+        print(text_green('  level-lat: '),
+              'a pressure level vs. latitude plot.')
+        print(text_green('  level-lon: '),
+              'a pressure level vs. longitude plot.')
+        print(
+            text_green('  map: '),
+            'a longitude vs. latitude plot for a specific pressure level.')
+        print(text_blue('response: '), 'beta coeffs * regressors with geo-keys:')
+        print(text_green('  level-lat: '),
+              'a pressure level vs. latitude response plot of each regressor.')
+        print(text_green('  level-lon: '),
+              'a pressure level vs. longitude response plot of each regressor.')
+        print(
+            text_green('  map: '),
+            'a longitude vs. latitude respone plot of each regressor.')
 
 
 def plot_like_results(*results, plot_key='predict_level', level=None,
@@ -1457,11 +1506,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt_kwargs.update({'center': 0.0, 'levels': 41})
                 plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
                 plt_kwargs.update(kwargs)
-                if p.time is not None and p.time_mean == 'season':
+                if p.time is not None and p.time_mean is not None:
                     # rds = p.parse_coord(rds, 'time')
                     label_add += ', for times {} to {}'.format(p.time[0],
                                                                 p.time[1])
-                    fg = data.plot.contourf(row='season', col='opr',
+                    fg = data.plot.contourf(row=p.time_mean, col='opr',
                                             **plt_kwargs)
                 elif p.time is not None and p.time_mean is None:
                     label_add += ', for times {} to {}'.format(p.time[0],
@@ -1575,6 +1624,64 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 fg = data.plot.contourf(**plt_kwargs)
                 fg.ax.set_title(label_add, fontsize=12, fontweight=750)
                 fg.ax.figure.subplots_adjust(bottom=0.1, top=0.95, left=0.1)
+                plt.show()
+                return fg
+        elif key == 'response':
+            label_add = data.attrs['long_name'] + ' response'
+            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+                          'add_colorbar': False, 'levels': 41, 
+                          'extend': 'both'}
+            if geo_key == 'map':
+                if p.level is not None:
+                    label_add += ' at level= {:.2f} hPa'.format(p.level)
+                else:
+                    raise Exception('pls pick a level for this plot')
+                units = data.attrs['units']
+                plt_kwargs.update({'center': 0.0, 'levels': 41})
+                if p.time is not None and p.time_mean is not None:
+                    # rds = p.parse_coord(rds, 'time')
+                    label_add += ', for times {} to {}'.format(p.time[0],
+                                                               p.time[1])
+                    fg = data.plot.contourf(row=p.time_mean, col='regressors',
+                                            **plt_kwargs)
+
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label=units,
+                    format='%0.3f')
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                return fg
+            elif geo_key == 'level-lat' or geo_key == 'level-lon':
+                if geo_key == 'level-lat':
+                    if p.lon is not None and not p.lon_mean:
+                        label_add += ' at lon={}'.format(p.lon)
+                    elif p.lon_mean:
+                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p.lon[1])
+                elif geo_key == 'level-lon':
+                    if p.lat is not None and not p.lat_mean:
+                        label_add += ' at lat={}'.format(p.lat)
+                    elif p.lat_mean:
+                        label_add += ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                plt_kwargs.update({'yscale': 'log', 'yincrease': False})
+                plt_kwargs.update(kwargs)
+                if p.time is not None and p.time_mean is not None:
+                    # rds = p.parse_coord(rds, 'time')
+                    label_add += ', for times {} to {}'.format(p.time[0],
+                                                               p.time[1])
+                    fg = data.plot.contourf(row=p.time_mean, col='regressors',
+                                            **plt_kwargs)
+                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                fg.add_colorbar(
+                    cax=cbar_ax, orientation="horizontal", label='coeff',
+                    format='%0.3f')
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+                ax = [ax for ax in fg.axes.flat][2]
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                # [ax.invert_yaxis() for ax in con.ax.figure.axes]
+                [ax.invert_yaxis() for ax in fg.axes.flat]
+                [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+                 fg.axes.flat]
                 plt.show()
                 return fg
     elif len(results) > 1:
