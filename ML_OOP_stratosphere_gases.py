@@ -1334,7 +1334,7 @@ class Plot_type:
             for key, value in attrs.items():
                 data.attrs[key] = value
             return data
-        elif self.time_mean is None and data[self.time_dim].size > 3 and self.plot_map:
+        elif self.time_mean is None and rds[self.time_dim].size > 3 and self.plot_map:
             raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
 #    def set_latlon_mean(self, coord='lat'):
 #        coord_val = getattr(self, coord)
