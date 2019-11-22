@@ -655,7 +655,7 @@ def produce_RI(res_dict, feature_dim):
     rds = rds.drop(names_to_drop)
     rds = rds.reset_coords(drop=True)
     rds.attrs['feature_types'].append('RI')
-    text_blue('Calculating RI scores for SciKit Learn Model.')
+    print(text_blue('Calculating RI scores for SciKit Learn Model.'))
     return xr_order(rds)
 
 
@@ -1336,6 +1336,8 @@ class Plot_type:
             return data
         elif self.time_mean is None and rds[self.time_dim].size > 3 and self.plot_map:
             raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
+        else:
+            return rds
 #    def set_latlon_mean(self, coord='lat'):
 #        coord_val = getattr(self, coord)
 #        if not isinstance(coord_val, list) and coord_val is not None:
@@ -1644,7 +1646,13 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                                                                p.time[1])
                     fg = data.plot.contourf(row=p.time_mean, col='regressors',
                                             **plt_kwargs)
-
+                elif p.time is not None and p.time_mean is None:
+                    label_add += ', for times {} to {}'.format(p.time[0],
+                                                                p.time[1])
+                    fg = data.plot.contourf(row='time', col='regressors',
+                                            **plt_kwargs)
+                elif p.time is None:
+                    raise Exception('pls pick a specific time or time range for this plot')
                 cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
                 fg.add_colorbar(
                     cax=cbar_ax, orientation="horizontal", label=units,
@@ -2153,9 +2161,19 @@ class ImprovedRegressor(RegressorWrapper):
         rds.attrs['error_types'] = error_types
         rds.attrs['sample_dim'] = self.sample_dim
         rds.attrs['feature_dim'] = feature_dim
+        # add X to results:
+        rds['X'] = X
         if verbose:
-            text_blue('Producing results...Done!')
+            print(text_blue('Producing results...Done!'))
         return rds
+
+    def save_results(self, path_like):
+        ds = self.results_
+        comp = dict(zlib=True, complevel=9)  # best compression
+        encoding = {var: comp for var in ds.data_vars}
+        ds.to_netcdf(path_like, 'w', encoding=encoding)
+        print('saved results to {}.'.format(path_like))
+        return
 
     def make_RI(self, X, y):
         """ make Relative Impact score for estimator into xarray"""
