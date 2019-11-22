@@ -7,6 +7,16 @@ Created on Mon Oct 22 10:33:05 2018
 """
 
 
+def copy_coords_attrs(ds1, ds2, verbose=False):
+    inter_coords = list(set(ds1.coords).intersection(set(ds2.coords)))
+    for coord in inter_coords:
+        if verbose:
+            print('copying attrs for {} coord'.format(coord))
+        for key, value in ds1[coord].attrs.items():
+            ds2[coord].attrs[key] = value
+    return ds2
+
+
 def query_yes_no(question, default="no"):
     """Ask a yes/no question via raw_input() and return their answer.
 
