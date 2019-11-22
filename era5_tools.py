@@ -208,6 +208,24 @@ def compare_MERRA_ERA5(path='local', plot=False):
     return merged_all
 
 
+def regrid_era5_back_to_center_lon_coords(da, lon_dim='lon', lat_dim='lat'):
+    import xesmf as xe
+    import xarray as xr
+    from aux_functions_strat import copy_coords_attrs
+    attrs = da.attrs
+    da = da.transpose(..., lat_dim, lon_dim)
+    lon = da[lon_dim].values - 180
+    lat = da[lat_dim].values
+    ds_out = xr.Dataset({'lat': (['lat'], lat), 'lon': (['lon'], lon)})
+    regridder = xe.Regridder(da, ds_out, 'bilinear')
+    print(regridder)
+    dr_out = regridder(da)
+    for key, value in attrs.items():
+        dr_out.attrs[key] = value
+    dr_out = copy_coords_attrs(da, dr_out, verbose=True)
+    return dr_out
+
+
 def regrid_era5(da):
     """regrid era5 dataarray to center coordinates."""
     import numpy as np
