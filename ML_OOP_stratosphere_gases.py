@@ -35,6 +35,7 @@ class Parameters:
                  time_period=['1994', '2018'],
                  area_mean=False,
                  lat_slice=[-20, 20],
+                 plevels=None,
                  # original_data_file='swoosh_lonlatpress-20deg-5deg.nc',
                  original_data_file='swoosh_latpress-2.5deg.nc'
                  ):
@@ -44,6 +45,7 @@ class Parameters:
         self.model_name = model_name
         self.season = season
         self.lat_slice = lat_slice
+        self.plevels = plevels
         self.reg_time_shift = reg_time_shift
         self.poly_features = poly_features
 #        self.reg_add_sub = reg_add_sub
@@ -462,8 +464,11 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         # plt.figure()
         # a full year + and -:
         shifts = np.arange(min_shift, max_shift + 1)
-        X = X.sel(regressors=['qbo_1', 'qbo_2', 'ch4', 'cold'])
-        reg_to_shift = ['qbo_1', 'qbo_2', 'cold']
+        # X = X.sel(regressors=['qbo_cdas', 'radio_cold_no_qbo'])
+        # X = X.sel(regressors=['qbo_1', 'qbo_2', 'ch4', 'cold'])
+        # reg_to_shift = ['qbo_1', 'qbo_2', 'cold']
+        # reg_to_shift = ['qbo_cdas', 'radio_cold_no_qbo']
+        reg_to_shift = [x for x in X.regressors.values]
         reg_results = []
         for reg in reg_to_shift:
             opt_results = []
@@ -484,7 +489,9 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
         fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
-                                          levels=21, col='reg_shifted')
+                                          levels=21, col='reg_shifted',
+                                          cmap='viridis', vmin=0.0,
+                                          extend='both')
         for n_regs in range(len(fg.axes[0])):
             rds.isel(reg_shifted=n_regs).level_month_shift.plot.line('r.-',
                                                                      y='level',
@@ -497,6 +504,36 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         plt.subplots_adjust(top=0.85, right=0.82)
         ax.yaxis.set_major_formatter(ScalarFormatter())
         print('Done!')
+        return rds
+    if (p.special_run is not None
+            and 'run_with_shifted_plevels' in p.special_run.keys()):
+        import xarray as xr
+        from aux_functions_strat import text_blue
+        print(model.estimator)
+        level_month_shift = p.special_run['run_with_shifted_plevels']
+        regs = [x for x in level_month_shift.reg_shifted.values]
+        print('Running with special mode: run_with_shifted_plevels,' +
+              ' with regressors shifts per level: {}'.format(regs))
+#        for reg in regs:
+        level_results = []
+        lms = level_month_shift
+        for lev in lms.level.values:
+            level_shift = lms.sel(level=lev, method='nearest').values
+            shift_dict = dict(zip(regs, level_shift))
+            Xcopy = reg_shift(X, shift_dict)
+            p.plevels = lev
+            _, y = pre_proccess(p, verbose=False)
+            y_shifted = y.sel(time=Xcopy.time)
+#            print('shifting target data {} months'.format(str(shift)))
+#            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
+#                  y_shifted.time.size))
+            model.fit(Xcopy, y_shifted, verbose=False)
+            level_results.append(model.results_)
+        rds = xr.concat(level_results, dim='level')
+        print(text_blue('Done!'))
+        # rds = xr.concat(reg_results, dim='reg_shifted')
+        rds['reg_shifted'] = regs
+        rds['level_month_shift'] = level_month_shift
         return rds
     # check for CV builtin model(e.g., LassoCV, GridSearchCV):
     if cv is not None:
@@ -659,13 +696,14 @@ def produce_RI(res_dict, feature_dim):
     return xr_order(rds)
 
 
-def pre_proccess(params):
+def pre_proccess(params, verbose=True):
     """ pre proccess the data, area_mean is reducing the data to level-time,
     time_period is a slicer of the specific period. lag is inside params and
     shifting the data with minus"""
     import aux_functions_strat as aux
     import xarray as xr
     import click
+    plevels = params.plevels
     reg_list = params.regressors
     species = params.species
     season = params.season
@@ -689,25 +727,26 @@ def pre_proccess(params):
             raise KeyError('The regressors selection cannot find {}'.format(reg_list))
     # selecting time period:
     if time_period is not None:
-        print('selecting regressors time period:{} to {}'.format(*time_period))
+        if verbose:
+            print('selecting regressors time period:{} to {}'.format(*time_period))
         regressors = regressors.sel(time=slice(*time_period))
     # anomlizing them:
     for reg in regressors.data_vars.keys():
         if reg == 'ch4':
-            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
+            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5, verbose=verbose)
         elif reg == 'radio_cold' or reg == 'radio_cold_no_qbo':
-            regressors[reg] = aux.deseason_xr(regressors[reg], how='mean')
+            regressors[reg] = aux.deseason_xr(regressors[reg], how='mean', verbose=verbose)
 #        elif 'qbo_' in reg:
 #            regressors[reg] = aux.normalize_xr(regressors[reg], norm=1)
 #        elif 'solar' in reg:
 #            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
         elif 'bdc' in reg:
 #            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
-            regressors[reg] = aux.deseason_xr(regressors[reg], how='mean')
+            regressors[reg] = aux.deseason_xr(regressors[reg], how='mean', verbose=verbose)
 #        elif 'vol' in reg:
 #            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
     # normalize all regressors to -1 to 1:
-    regressors = aux.normalize_xr(regressors, norm=5)
+    regressors = aux.normalize_xr(regressors, norm=5, verbose=verbose)
     # regressing one out of the other if neccesary:
     # just did it by specifically regressed out and saved as _index.nc'
     # making lags of some of the regressors (e.g, cold point):
@@ -727,44 +766,54 @@ def pre_proccess(params):
     if swoosh_field is not None:
         # load swoosh from work dir:
         ds = xr.load_dataset(path / params.original_data_file)
-        print('loading SWOOSH file: {}'.format(params.original_data_file))
+        if verbose:
+            print('loading SWOOSH file: {}'.format(params.original_data_file))
         field = swoosh_field + species + 'q'
-        print('loading SWOOSH field: {}'.format(field))
+        if verbose:
+            print('loading SWOOSH field: {}'.format(field))
     elif (swoosh_field is None and (species == 'h2o' or species == 'o3')):
         msg = 'species is {}, and original_data_file is not SWOOSH'.format(species)
         msg += ',Do you want to continue?'
         if click.confirm(msg, default=True):
             ds = xr.load_dataset(path / params.original_data_file)
-            print('loading file: {}'.format(params.original_data_file))
+            if verbose:
+                print('loading file: {}'.format(params.original_data_file))
             field = species
     else:
         ds = xr.load_dataset(path / params.original_data_file)
-        print('loading file: {}'.format(params.original_data_file))
+        if verbose:
+            print('loading file: {}'.format(params.original_data_file))
         field = species
     da = ds[field]
     # selecting time period:
     if time_period is not None:
-        print('selecting data time period:{} to {}'.format(*time_period))
+        if verbose:
+            print('selecting data time period:{} to {}'.format(*time_period))
         da = da.sel(time=slice(*time_period))
     # align time between y and X:
     new_time = aux.overlap_time_xr(da, regressors.to_array())
     regressors = regressors.sel(time=new_time)
     da = da.sel(time=new_time)
     # slice to level and latitude:
-    print('selecting latitude area: {} to {}'.format(*lat_slice))
+    if verbose:
+        print('selecting latitude area: {} to {}'.format(*lat_slice))
     if da.level.size > 1:
         da = da.sel(level=slice(100, 1), lat=slice(*lat_slice))
     else:
         da = da.sel(lat=slice(*lat_slice))
     # select seasonality:
     if season is not None:
-        print('selecting season: {}'.format(season))
+        if verbose:
+            print('selecting season: {}'.format(season))
         da = da.sel(time=da['time.season'] == season)
         regressors = regressors.sel(time=regressors['time.season'] == season)
     # area_mean:
     if area_mean:
-        print('selecting data area mean')
+        if verbose:
+            print('selecting data area mean')
         da = aux.xr_weighted_mean(da)
+    if plevels is not None:
+        da = da.sel(level=plevels, method='nearest').expand_dims('level')
     # remove nans from y:
     da = aux.remove_nan_xr(da, just_geo=False)
     regressors = regressors.sel(time=da.time)
