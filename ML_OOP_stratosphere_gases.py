@@ -534,7 +534,8 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         # rds = xr.concat(reg_results, dim='reg_shifted')
         rds['reg_shifted'] = regs
         rds['level_month_shift'] = level_month_shift
-        return rds
+        model.results_ = rds
+        return model
     # check for CV builtin model(e.g., LassoCV, GridSearchCV):
     if cv is not None:
         if hasattr(ml_model, 'cv') and not RI_proc:
@@ -811,7 +812,10 @@ def pre_proccess(params, verbose=True):
     if area_mean:
         if verbose:
             print('selecting data area mean')
-        da = aux.xr_weighted_mean(da)
+        # da = aux.xr_weighted_mean(da)
+        if 'lon' in da.dims:
+            da = da.mean('lon', keep_attrs=True)
+        da = aux.lat_mean(da)
     if plevels is not None:
         da = da.sel(level=plevels, method='nearest').expand_dims('level')
     # remove nans from y:
@@ -830,7 +834,7 @@ def pre_proccess(params, verbose=True):
     reg_stacked = regressors[reg_names].to_array(dim='regressors').T
     # da stacking:
     dims_to_stack = [x for x in da.dims if x != 'time']
-    da = da.stack(samples=dims_to_stack).squeeze()
+    da = da.stack(samples=dims_to_stack)
     # time slice:
     return reg_stacked, da
 
@@ -1317,7 +1321,7 @@ class Plot_type:
             data = data.to_array(dim='opr', name='name')
             self.time = self.get_coord_limits(data, 'time')
             # choose time_mean:
-            self.parse_time_mean(data)
+            data = self.parse_time_mean(data)
         elif self.plot_type == 'feature':
             # choose regressors:
             if self.regressors is not None:
@@ -1642,6 +1646,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.show()
                 return fg
         elif key == 'r2':
+            cbar_kwargs = {'format': '%.2f', 'spacing': 'proportional'}
             label_add = r'$R^2$ Adjusted'
             plt_kwargs = {'cmap': 'viridis', 'figsize': (6, 8),
                           'yincrease': False, 'levels': 41, 'vmin': 0.0,
@@ -1658,11 +1663,12 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     elif p.lat_mean:
                         label_add += ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
                 plt_kwargs.update(kwargs)
-                fg = data.plot.contourf(**plt_kwargs)
-                fg.ax.set_title(label_add, fontsize=12, fontweight=750)
+                fg = data.plot.contourf(cbar_kwargs=cbar_kwargs, **plt_kwargs)
+                fg.colorbar.set_label(r'Adjusted $R^2$')
+                fg.ax.set_title(label_add, fontsize=12, fontweight=250)
                 fg.ax.figure.axes[0].invert_yaxis()
                 fg.ax.figure.axes[0].yaxis.set_major_formatter(ScalarFormatter())
-                fg.ax.figure.subplots_adjust(bottom=0.1, top=0.95, left=0.1)
+                fg.ax.figure.subplots_adjust(bottom=0.1, top=0.90, left=0.1)
                 plt.show()
                 return fg
             elif geo_key == 'map':
@@ -1672,9 +1678,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     raise Exception('pls pick a level for this plot')
                 plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
                 plt_kwargs.update(kwargs)
-                fg = data.plot.contourf(**plt_kwargs)
-                fg.ax.set_title(label_add, fontsize=12, fontweight=750)
-                fg.ax.figure.subplots_adjust(bottom=0.1, top=0.95, left=0.1)
+                fg = data.plot.contourf(cbar_kwargs=cbar_kwargs, **plt_kwargs)
+                fg.colorbar.set_label(r'Adjusted $R^2$')
+                fg.ax.set_title(label_add, fontsize=12, fontweight=250)
+                fg.ax.figure.subplots_adjust(bottom=0.1, top=0.90, left=0.1)
                 plt.show()
                 return fg
         elif key == 'response':
