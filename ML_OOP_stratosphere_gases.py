@@ -1647,7 +1647,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 return fg
         elif key == 'r2':
             cbar_kwargs = {'format': '%.2f', 'spacing': 'proportional'}
-            label_add = r'$R^2$ Adjusted'
+            label_add = r'Adjusted $R^2$'
             plt_kwargs = {'cmap': 'viridis', 'figsize': (6, 8),
                           'yincrease': False, 'levels': 41, 'vmin': 0.0,
                           'yscale': 'log'}
