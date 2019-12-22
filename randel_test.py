@@ -351,38 +351,54 @@ def gantt_chart(ds):
     gytl = plt.gca().get_yticklabels()
     for i in range(len(gytl)):
         gytl[i].set_color(col[i])
-    plt.tight_layout()    
+    plt.tight_layout()
     return
 
 
-def correlate_wv_models_radio(times=['1993', '2017']):
+def correlate_wv_models_radio(
+        times1=['1993', '2017'], times2=['2005', '2017']):
     from strato_soundings import calc_cold_point_from_sounding
     from strato_soundings import get_cold_point_from_wang_sounding
     import xarray as xr
     import matplotlib.pyplot as plt
     import seaborn as sns
     import numpy as np
-    radio_cold3 = calc_cold_point_from_sounding(path=sound_path,
-                                                times=(times[0], times[1]),
-                                                plot=False, return_mean=True)
-    radio_cold3.name = 'radio_cpt_anoms_3_stations_randel'
+    radio_cold3_t1 = calc_cold_point_from_sounding(path=sound_path,
+                                                   times=(
+                                                       times1[0], times1[1]),
+                                                   plot=False, return_mean=True)
+    radio_cold3_t2 = calc_cold_point_from_sounding(path=sound_path,
+                                                   times=(
+                                                          times2[0], times2[1]),
+                                                          plot=False, return_mean=True)
+    radio_cold3_t1.name = 'radio_cpt_anoms_3_stations_randel'
+    radio_cold3_t2.name = 'radio_cpt_anoms_3_stations_randel'
     ds = get_cold_point_from_wang_sounding()
     radio_wang = ds.to_array().mean('variable')
     radio_wang.name = 'radio_cpt_anoms_3_stations_wang'
     wv_anoms = load_wv_data()
     cpt_models = load_cpt_models()
-    to_compare = xr.merge([wv_anoms, cpt_models, radio_cold3, radio_wang])
-    to_compare = to_compare.sel(time=slice(times[0], times[1]))
-    corr = to_compare.to_dataframe().corr()
-    fig, ax = plt.subplots(figsize=(11, 11))
-    mask = np.zeros_like(corr)
+    to_compare1 = xr.merge([wv_anoms, cpt_models, radio_cold3_t1, radio_wang])
+    to_compare2 = xr.merge([wv_anoms, cpt_models, radio_cold3_t2, radio_wang])
+    to_compare1 = to_compare1.sel(time=slice(times1[0], times1[1]))
+    to_compare2 = to_compare2.sel(time=slice(times2[0], times2[1]))
+    corr1 = to_compare1.to_dataframe().corr()
+    corr2 = to_compare2.to_dataframe().corr()
+    mask = np.zeros_like(corr1)
     mask[np.triu_indices_from(mask)] = True
-    h = sns.heatmap(corr, mask=mask, annot=True, cmap="YlGn", ax=ax)
+    df_mask = corr1.copy()
+    df_mask[:] = mask
+    df_mask = df_mask.astype(bool)
+    corr1[df_mask] = corr2[df_mask]
+    fig, ax = plt.subplots(figsize=(11, 11))
+#    mask = np.zeros_like(corr)
+#    mask[np.triu_indices_from(mask)] = True
+    h = sns.heatmap(corr1, annot=True, cmap="YlGn", ax=ax,
+                    cbar=True)
     h.set_xticklabels(
         h.get_xticklabels(),
         rotation=45,
         horizontalalignment='right')
-    plt.subplots_adjust(left=0.30, bottom=0.25, right=0.95)
 #    im, cbar = heatmap(corr.values, corr.index.values, corr.columns, ax=ax,
 #                       cmap="YlGn", cbarlabel="correlation")
 #    texts = annotate_heatmap(im, valfmt="{x:.2f}")
@@ -404,12 +420,15 @@ def correlate_wv_models_radio(times=['1993', '2017']):
 #            annot.set_weight('bold')
 #            annot.set_color('purple')
 #            # annot.set_size(20)
-    plt.title('Correlation Heatmap of times: {} to {}'.format(
-            times[0], times[1]), fontdict=font)
+    ax.set_title('Upper right heatmap: {} to {}, lower left heatmap: {} to {}.'.format(
+                times2[0], times2[1], times1[0], times1[1]), fontdict=font)
 #    fig.tight_layout()
+#    fig.colorbar(h.get_children()[0], ax=axes[1])
+    plt.subplots_adjust(left=0.3, bottom=0.25, right=0.95)
+    # plt.tight_layout()
     plt.show()
     # plt.subplots_adjust(left=0.35, bottom=0.4, right=0.95)
-    return to_compare
+    return fig
 
 
 def get_randel_corr(lats=[-10, 10], times=['1993', '2017']):
