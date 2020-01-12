@@ -33,6 +33,16 @@ for key, val in rc.items():
 sns.set(rc=rc, style='ticks')
 
 
+def parse_quantile(rds, quan):
+    vals = rds.quantile(quan)
+    vals = [abs(x) for x in vals]
+    if vals[0] < vals[1]:
+        quan_kws = {'vmin': -vals[0]}
+    else:
+        quan_kws = {'vmax': vals[1]}
+    return quan_kws
+
+
 def plot_forecast_busts_lines(ax, color='r', style='--'):
     ax.axvline('2010-05', c=color, ls=style)
     ax.axvline('2010-09', c=color, ls=style)
@@ -240,14 +250,15 @@ def plot_figure_4(path=work_chaim, robust=False):
     return fg
 
 
-def plot_figure_5(path=work_chaim, robust=False):
+def plot_figure_5(path=work_chaim, quan=[0.0, 1.0]):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     rds = xr.open_dataset(
         work_chaim /
         'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+    quan_kws = parse_quantile(rds.resid, quan)
     fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
-                           cmap=predict_cmap, robust=robust)
+                           cmap=predict_cmap, **quan_kws)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
@@ -308,7 +319,6 @@ def plot_figure_7(path=work_chaim, robust=False):
         work_chaim /
         'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2018.nc')
     rds = rds.sortby('season')
-    vmax = rds.params.max()
     plt_kwargs = {'cmap': predict_cmap, 'figsize': (15, 10),
                   'add_colorbar': False,
                   'extend': 'both', 'yscale': 'log',
