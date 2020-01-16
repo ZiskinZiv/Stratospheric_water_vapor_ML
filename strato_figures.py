@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 import matplotlib.dates as mdates
 import seaborn as sns
+import matplotlib.ticker as mticker
 from palettable.scientific import sequential as seqsci
 from palettable.colorbrewer import sequential as seqbr
 from palettable.scientific import diverging as divsci
@@ -44,15 +45,17 @@ def parse_quantile(rds, quan):
 
 
 def plot_forecast_busts_lines(ax, color='r', style='--'):
-    ax.axvline('2010-05', c=color, ls=style)
-    ax.axvline('2010-09', c=color, ls=style)
-    ax.axvline('2010-12', c=color, ls=style)
+    # ax.axvline('2010-05', c=color, ls=style)
+    # ax.axvline('2010-09', c=color, ls=style)
+    ax.axvline('2010-11', c=color, ls=style)
+    # ax.axvline('2010-12', c=color, ls=style)
     ax.axvline('2011-04', c=color, ls=style)
     ax.axvline('2015-09', c=color, ls=style)
     ax.axvline('2016-01', c=color, ls=style)
     ax.axvline('2016-09', c=color, ls=style)
     ax.axvline('2017-01', c=color, ls=style)
     return ax
+
 
 def remove_regressors_and_set_title(ax):
     short_titles = {'qbo_cdas': 'QBO',
@@ -189,7 +192,7 @@ def plot_figure_2(path=work_chaim, robust=False):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     rds = xr.open_dataset(
-        work_chaim /
+        path /
         'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_level-time', lat=None,
                            cmap=predict_cmap, robust=robust)
@@ -215,7 +218,7 @@ def plot_figure_3(path=work_chaim, robust=False):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     rds = xr.open_dataset(
-        work_chaim /
+        path /
         'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
     fg = plot_like_results(rds, plot_key='r2_level-lat', cmap=error_cmap,
                            robust=robust)
@@ -233,7 +236,7 @@ def plot_figure_4(path=work_chaim, robust=False):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     rds = xr.open_dataset(
-        work_chaim /
+        path /
         'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
     fg = plot_like_results(rds, plot_key='params_level-lat', cmap=predict_cmap,
                            figsize=(10, 5), robust=robust)
@@ -254,7 +257,7 @@ def plot_figure_5(path=work_chaim, quan=[0.0, 1.0]):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     rds = xr.open_dataset(
-        work_chaim /
+        path /
         'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
     quan_kws = parse_quantile(rds.resid, quan)
     fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
@@ -286,7 +289,7 @@ def plot_figure_6(path=work_chaim, robust=False):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     rds = xr.open_dataset(
-        work_chaim /
+        path /
         'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_lon-time', level=82,
                            cmap=predict_cmap, robust=robust)
@@ -316,7 +319,7 @@ def plot_figure_6(path=work_chaim, robust=False):
 def plot_figure_7(path=work_chaim, robust=False):
     import xarray as xr
     rds = xr.open_dataset(
-        work_chaim /
+        path /
         'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2018.nc')
     rds = rds.sortby('season')
     plt_kwargs = {'cmap': predict_cmap, 'figsize': (15, 10),
@@ -340,4 +343,111 @@ def plot_figure_7(path=work_chaim, robust=False):
         bottom_ax.set_xlabel(r'Latitude [$\degree$]')
     print('Caption: ')
     print('The beta coefficients for the water vapor MLR season analysis for pressure levels vs. latitude with  CH4, ENSO  pressure level lag varied QBO as predictors. This MLR analysis spanned from 1984 to 2018. Note that ENSO is dominant in the MAM season')
+    return fg
+
+
+def plot_figure_10(path=work_chaim):
+    import xarray as xr
+    from ML_OOP_stratosphere_gases import plot_like_results
+    rds = xr.open_dataset(
+            path / 'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bds-plags_2004-2018.nc')
+    fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
+                       cmap=predict_cmap)
+    top_ax = fg.axes[0][0]
+    mid_ax = fg.axes[1][0]
+    bottom_ax = fg.axes[-1][0]
+    # remove time from xlabel:
+    bottom_ax.set_xlabel('')
+    # new ticks:
+    ax = change_xticks_years(bottom_ax, start=2005, end=2018)
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(left=0.06, bottom=0.185)
+    top_ax.set_title(
+        'Area-averaged (from 180W to 180E longitudes) combined H2O anomaly for the 82 hPa pressure level')
+    mid_ax.set_title('MLR reconstruction')
+    bottom_ax.set_title('Residuals')
+    fg.fig.canvas.draw()
+    for axes in fg.axes.flatten():
+        ax = change_ticks_lon(fg.fig, axes, which_axes='y', draw=False)
+        ax.set_ylabel(r'Latitude [$\degree$]')
+        ax = plot_forecast_busts_lines(ax, color='k')
+    return fg
+
+
+def plot_figure_11(path=work_chaim, robust=False):
+    from ML_OOP_stratosphere_gases import plot_like_results
+    import xarray as xr
+    rds = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bds-plags_2004-2018.nc')
+    fg = plot_like_results(rds, plot_key='predict_lon-time', level=82,
+                           cmap=predict_cmap, robust=robust)
+    top_ax = fg.axes[0][0]
+    mid_ax = fg.axes[1][0]
+    bottom_ax = fg.axes[-1][0]
+    # remove time from xlabel:
+    bottom_ax.set_xlabel('')
+    # new ticks:
+    ax = change_xticks_years(bottom_ax, start=2005, end=2018)
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(left=0.06, bottom=0.185)
+    top_ax.set_title(
+        'Area-averaged (weighted by cosine of latitudes 60S to 60N) combined H2O anomaly for the 82 hPa pressure level')
+    mid_ax.set_title('MLR reconstruction')
+    bottom_ax.set_title('Residuals')
+    fg.fig.canvas.draw()
+    for axes in fg.axes.flatten():
+        ax = change_ticks_lon(fg.fig, axes, which_axes='y', draw=False)
+        ax.set_ylabel(r'Longitude [$\degree$]')
+        ax = plot_forecast_busts_lines(ax, color='k')
+    print('Caption: ')
+    print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO and pressure level lag varied QBO as predictors. Note the four forecast "busts": 2010-JJA, 2011-JFM,2015-OND and 2016-OND')
+    return fg
+
+
+def plot_figure_12(path=work_chaim):
+    import xarray as xr
+    import cartopy.crs as ccrs
+    import numpy as np
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+    rds = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+    rds = rds['r2_adj'].sel(level=82, method='nearest')
+    fig = plt.figure(figsize=(11, 5))
+    ax = fig.add_subplot(1, 1, 1,
+                         projection=ccrs.PlateCarree(central_longitude=0))
+    ax.coastlines()
+    fg = rds.plot.contourf(ax=ax, add_colorbar=False, cmap=error_cmap,
+                           vmin=0.0, extend='both', levels=21)
+    ax.set_title('')
+    lons = rds.lon.values[0:int(len(rds.lon.values) / 2)][::2]
+    lons_mirror = abs(lons[::-1])
+    lons = np.concatenate([lons, lons_mirror])
+    lats = rds.lat.values[0:int(len(rds.lat.values) / 2)][::2]
+    lats_mirror = abs(lats[::-1])
+    lats = np.concatenate([lats, lats_mirror])
+    # ax.set_xticks(lons, crs=ccrs.PlateCarree())
+    # ax.set_yticks(lats, crs=ccrs.PlateCarree())
+    # lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    # lat_formatter = LatitudeFormatter()
+    # ax.xaxis.set_major_formatter(lon_formatter)
+    # ax.yaxis.set_major_formatter(lat_formatter)
+    cbar_kws = {'label': '', 'format': '%0.2f'}
+    cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .025])
+    plt.colorbar(fg, cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    gl = ax.gridlines(
+        crs=ccrs.PlateCarree(),
+        linewidth=1,
+        color='black',
+        alpha=0.5,
+        linestyle='--',
+        draw_labels=True)
+    gl.xlines = True
+    gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+    gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30 ,45])
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.98,left=0.06, right=0.94)
     return fg
