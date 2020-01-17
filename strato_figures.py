@@ -19,7 +19,9 @@ from palettable.scientific import diverging as divsci
 from palettable.colorbrewer import diverging as divbr
 from matplotlib.colors import ListedColormap
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+from pathlib import Path
 
+savefig_path = Path('/home/shlomi/Pictures')
 error_cmap = seqsci.Nuuk_11.mpl_colormap
 error_cmap = seqbr.YlGnBu_9.mpl_colormap
 # predict_cmap = ListedColormap(divbr.BrBG_11.mpl_colors)
@@ -45,6 +47,8 @@ def parse_quantile(rds, quan):
 
 
 def plot_forecast_busts_lines(ax, color='r', style='--'):
+    # three forecast busts:
+    # 2010D2011JFM, 2015-OND, 2016-OND
     # ax.axvline('2010-05', c=color, ls=style)
     # ax.axvline('2010-09', c=color, ls=style)
     ax.axvline('2010-11', c=color, ls=style)
@@ -57,7 +61,7 @@ def plot_forecast_busts_lines(ax, color='r', style='--'):
     return ax
 
 
-def remove_regressors_and_set_title(ax):
+def remove_regressors_and_set_title(ax, set_title_only=None):
     short_titles = {'qbo_cdas': 'QBO',
                     'anom_nino3p4': 'ENSO',
                     'ch4': 'CH4',
@@ -65,7 +69,10 @@ def remove_regressors_and_set_title(ax):
                     'era5_t500': 'T at 500hPa'}
     title = ax.get_title()
     title = title.split('=')[-1].strip(' ')
-    title = short_titles.get(title)
+    if set_title_only is not None:
+        title = short_titles.get(set_title_only)
+    else:
+        title = short_titles.get(title)
     ax.set_title(title)
     return ax
 
@@ -82,11 +89,11 @@ def change_ticks_lat(fig, ax, draw=True, which_axes='x'):
     xlabels = []
     for label in labels:
         if label < 0:
-            xlabel = '{}S'.format(str(label).split('-')[-1])
+            xlabel = r'{}$\degree$S'.format(str(label).split('-')[-1])
         elif label > 0:
-            xlabel = '{}N'.format(label)
+            xlabel = r'{}$\degree$N'.format(label)
         elif label == 0:
-            xlabel = '0'
+            xlabel = r'0$\degree$'
         xlabels.append(xlabel)
     if which_axes == 'x':
         ax.set_xticklabels(xlabels)
@@ -108,11 +115,11 @@ def change_ticks_lon(fig, ax, draw=True, which_axes='x'):
     xlabels = []
     for label in labels:
         if label < 0:
-            xlabel = '{}W'.format(str(label).split('-')[-1])
+            xlabel = r'{}$\degree$W'.format(str(label).split('-')[-1])
         elif label > 0:
-            xlabel = '{}E'.format(label)
+            xlabel = r'{}$\degree$E'.format(label)
         elif label == 0:
-            xlabel = '0'
+            xlabel = r'$\degree$0'
         xlabels.append(xlabel)
     if which_axes == 'x':
         ax.set_xticklabels(xlabels)
@@ -158,6 +165,7 @@ def plot_figure_1(path=work_chaim, regressors=['qbo_cdas']):
         fg.fig.subplots_adjust(right=0.8)
         print('Caption:')
         print('The adjusted R^2 for the QBO index from CDAS as a function of pressure level and month lag. The solid line and dots represent the maximum R^2 for each pressure level.')
+        filename = 'r2_{}_shift_optimize.png'.format(regressors[0])
     else:
         rds = run_ML(time_period=['1984', '2018'], regressors=regressors,
                      special_run={'optimize_reg_shift': [0, 12]},
@@ -185,6 +193,9 @@ def plot_figure_1(path=work_chaim, regressors=['qbo_cdas']):
         fg.fig.subplots_adjust(left=0.07, bottom=0.27)
         print('Caption:')
         print('The adjusted R^2 for the QBO, BDC and T500 predictors as a function of pressure level and month lag. The solid line and dots represent the maximum R^2 for each pressure level.')
+        filename = 'r2_{}_shift_optimize.png'.format(
+            '_'.join([x for x in regressors]))
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -195,7 +206,7 @@ def plot_figure_2(path=work_chaim, robust=False):
         path /
         'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_level-time', lat=None,
-                           cmap=predict_cmap, robust=robust)
+                           cmap=predict_cmap, robust=robust, extend=None)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
@@ -211,6 +222,8 @@ def plot_figure_2(path=work_chaim, robust=False):
     bottom_ax.set_title('Residuals')
     print('Caption: ')
     print('Stratospheric water vapor anomalies and their MLR reconstruction and residuals, spanning from 1984 to 2018 and using CH4, ENSO and pressure level lag varied QBO as predictors')
+    filename = 'MLR_H2O_predict_level-time_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -221,14 +234,16 @@ def plot_figure_3(path=work_chaim, robust=False):
         path /
         'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
     fg = plot_like_results(rds, plot_key='r2_level-lat', cmap=error_cmap,
-                           robust=robust)
+                           robust=robust, extend=None)
     fg.ax.set_title('')
     change_ticks_lat(fg.ax.figure, fg.ax)
     fg.ax.figure.tight_layout()
     fg.ax.figure.subplots_adjust(left=0.15, right=0.95)
-    fg.ax.set_xlabel(r'Latitude [$\degree$]')
+    fg.ax.set_xlabel('')
     print('Caption: ')
     print('The adjusted R^2 for the water vapor MLR analysis(1984-2018) with CH4, ENSO and pressure level lag varied QBO as predictors')
+    filename = 'MLR_H2O_r2_level-lat_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -239,17 +254,19 @@ def plot_figure_4(path=work_chaim, robust=False):
         path /
         'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
     fg = plot_like_results(rds, plot_key='params_level-lat', cmap=predict_cmap,
-                           figsize=(10, 5), robust=robust)
+                           figsize=(10, 5), robust=robust, extend=None)
     fg.fig.suptitle('')
     fg.fig.canvas.draw()
     for ax in fg.axes.flatten():
         change_ticks_lat(fg.fig, ax, draw=False)
-        ax.set_xlabel(r'Latitude [$\degree$]')
+        ax.set_xlabel('')
         ax = remove_regressors_and_set_title(ax)
     fg.fig.tight_layout()
-    fg.fig.subplots_adjust(left=0.06, bottom=0.25)
+    fg.fig.subplots_adjust(left=0.1, bottom=0.25)
     print('Caption: ')
     print('The beta coefficiants for the water vapor MLR analysis(1984-2018) with CH4, ENSO and pressure level lag varied QBO as predictors')
+    filename = 'MLR_H2O_params_level-lat_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -261,7 +278,7 @@ def plot_figure_5(path=work_chaim, quan=[0.0, 1.0]):
         'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
     quan_kws = parse_quantile(rds.resid, quan)
     fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
-                           cmap=predict_cmap, **quan_kws)
+                           cmap=predict_cmap, **quan_kws, extend=None)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
@@ -278,10 +295,12 @@ def plot_figure_5(path=work_chaim, quan=[0.0, 1.0]):
     fg.fig.canvas.draw()
     for axes in fg.axes.flatten():
         ax = change_ticks_lat(fg.fig, axes, which_axes='y', draw=False)
-        ax.set_ylabel(r'Latitude [$\degree$]')
+        ax.set_ylabel('')
         ax = plot_forecast_busts_lines(ax, color='k')
     print('Caption: ')
     print('The zonal mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO and pressure level lag varied QBO as predictors. Note the four forecast "busts": 2010-JJA, 2011-JFM,2015-OND and 2016-OND')
+    filename = 'MLR_H2O_predict_lat-time_82_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -292,7 +311,7 @@ def plot_figure_6(path=work_chaim, robust=False):
         path /
         'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_lon-time', level=82,
-                           cmap=predict_cmap, robust=robust)
+                           cmap=predict_cmap, robust=robust, extend=None)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
@@ -309,10 +328,12 @@ def plot_figure_6(path=work_chaim, robust=False):
     fg.fig.canvas.draw()
     for axes in fg.axes.flatten():
         ax = change_ticks_lon(fg.fig, axes, which_axes='y', draw=False)
-        ax.set_ylabel(r'Longitude [$\degree$]')
+        ax.set_ylabel('')
         ax = plot_forecast_busts_lines(ax, color='k')
     print('Caption: ')
     print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO and pressure level lag varied QBO as predictors. Note the four forecast "busts": 2010-JJA, 2011-JFM,2015-OND and 2016-OND')
+    filename = 'MLR_H2O_predict_lon-time_82_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -324,7 +345,7 @@ def plot_figure_7(path=work_chaim, robust=False):
     rds = rds.sortby('season')
     plt_kwargs = {'cmap': predict_cmap, 'figsize': (15, 10),
                   'add_colorbar': False,
-                  'extend': 'both', 'yscale': 'log',
+                  'extend': None, 'yscale': 'log',
                   'yincrease': False, 'center': 0.0, 'levels': 41}#, 'vmax': vmax}
     fg = rds['params'].plot.contourf(
         col='regressors', row='season', **plt_kwargs, robust=robust)
@@ -340,9 +361,76 @@ def plot_figure_7(path=work_chaim, robust=False):
     fg.fig.canvas.draw()
     for bottom_ax in fg.axes[-1]:
         change_ticks_lat(fg.fig, bottom_ax, draw=False)
-        bottom_ax.set_xlabel(r'Latitude [$\degree$]')
+        bottom_ax.set_xlabel('')
     print('Caption: ')
     print('The beta coefficients for the water vapor MLR season analysis for pressure levels vs. latitude with  CH4, ENSO  pressure level lag varied QBO as predictors. This MLR analysis spanned from 1984 to 2018. Note that ENSO is dominant in the MAM season')
+    filename = 'MLR_H2O_params_level-lat_seasons_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
+    return fg
+
+
+def plot_figure_8(path=work_chaim):
+    import xarray as xr
+    from ML_OOP_stratosphere_gases import plot_like_results
+    rds = xr.open_dataset(
+        path / 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_36lags_2004-2018.nc')
+    fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
+                           cmap=predict_cmap, extend=None)
+    top_ax = fg.axes[0][0]
+    mid_ax = fg.axes[1][0]
+    bottom_ax = fg.axes[-1][0]
+    # remove time from xlabel:
+    bottom_ax.set_xlabel('')
+    # new ticks:
+    ax = change_xticks_years(bottom_ax, start=2008, end=2018)
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(left=0.06, bottom=0.185)
+    top_ax.set_title(
+        'Area-averaged (from 180W to 180E longitudes) combined H2O anomaly for the 82 hPa pressure level')
+    mid_ax.set_title('MLR reconstruction')
+    bottom_ax.set_title('Residuals')
+    fg.fig.canvas.draw()
+    for axes in fg.axes.flatten():
+        ax = change_ticks_lat(fg.fig, axes, which_axes='y', draw=False)
+        ax.set_ylabel('')
+        ax = plot_forecast_busts_lines(ax, color='k')
+    print('Caption: ')
+    print('The zonal mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, BDC, T500 and pressure level lag varied QBO as predictors. Note that T500 and BDC predictors were not able to deal with the forecast busts')
+    filename = 'MLR_H2O_predict_lat-time_82_cdas-plags_radio_cold36_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
+    return fg
+
+
+def plot_figure_9(path=work_chaim, robust=False):
+    from ML_OOP_stratosphere_gases import plot_like_results
+    import xarray as xr
+    rds = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_36lags_2004-2018.nc')
+    fg = plot_like_results(rds, plot_key='predict_lon-time', level=82,
+                           cmap=predict_cmap, robust=robust, extend=None)
+    top_ax = fg.axes[0][0]
+    mid_ax = fg.axes[1][0]
+    bottom_ax = fg.axes[-1][0]
+    # remove time from xlabel:
+    bottom_ax.set_xlabel('')
+    # new ticks:
+    ax = change_xticks_years(bottom_ax, start=2008, end=2018)
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(left=0.06, bottom=0.185)
+    top_ax.set_title(
+        'Area-averaged (weighted by cosine of latitudes 60S to 60N) combined H2O anomaly for the 82 hPa pressure level')
+    mid_ax.set_title('MLR reconstruction')
+    bottom_ax.set_title('Residuals')
+    fg.fig.canvas.draw()
+    for axes in fg.axes.flatten():
+        ax = change_ticks_lon(fg.fig, axes, which_axes='y', draw=False)
+        ax.set_ylabel('')
+        ax = plot_forecast_busts_lines(ax, color='k')
+    print('Caption: ')
+    print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, BDC, T500 and pressure level lag varied QBO as predictors. Note that T500 and BDC predictors were not able to deal with the forecast busts')
+    filename = 'MLR_H2O_predict_lon-time_82_cdas-plags_radio_cold36_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -350,9 +438,9 @@ def plot_figure_10(path=work_chaim):
     import xarray as xr
     from ML_OOP_stratosphere_gases import plot_like_results
     rds = xr.open_dataset(
-            path / 'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bds-plags_2004-2018.nc')
+        path / 'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bdc-plags_2004-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
-                       cmap=predict_cmap)
+                           cmap=predict_cmap, extend=None)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
@@ -368,9 +456,13 @@ def plot_figure_10(path=work_chaim):
     bottom_ax.set_title('Residuals')
     fg.fig.canvas.draw()
     for axes in fg.axes.flatten():
-        ax = change_ticks_lon(fg.fig, axes, which_axes='y', draw=False)
-        ax.set_ylabel(r'Latitude [$\degree$]')
+        ax = change_ticks_lat(fg.fig, axes, which_axes='y', draw=False)
+        ax.set_ylabel('')
         ax = plot_forecast_busts_lines(ax, color='k')
+    print('Caption: ')
+    print('The zonal mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, BDC, T500 and pressure level lag varied QBO as predictors. Note that T500 and BDC predictors were not able to deal with the forecast busts')
+    filename = 'MLR_H2O_predict_lat-time_82_cdas-plags_t500_plags_bdc_plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -379,9 +471,9 @@ def plot_figure_11(path=work_chaim, robust=False):
     import xarray as xr
     rds = xr.open_dataset(
         path /
-        'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bds-plags_2004-2018.nc')
+        'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bdc-plags_2004-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_lon-time', level=82,
-                           cmap=predict_cmap, robust=robust)
+                           cmap=predict_cmap, robust=robust, extend=None)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
@@ -398,14 +490,17 @@ def plot_figure_11(path=work_chaim, robust=False):
     fg.fig.canvas.draw()
     for axes in fg.axes.flatten():
         ax = change_ticks_lon(fg.fig, axes, which_axes='y', draw=False)
-        ax.set_ylabel(r'Longitude [$\degree$]')
+        ax.set_ylabel('')
         ax = plot_forecast_busts_lines(ax, color='k')
     print('Caption: ')
-    print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO and pressure level lag varied QBO as predictors. Note the four forecast "busts": 2010-JJA, 2011-JFM,2015-OND and 2016-OND')
+    print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, BDC, T500 and pressure level lag varied QBO as predictors. Note that T500 and BDC predictors were not able to deal with the forecast busts')
+    filename = 'MLR_H2O_predict_lon-time_82_cdas-plags_t500_plags_bdc_plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
 def plot_figure_12(path=work_chaim):
+    """r2 map (lat-lon) for cdas-plags, enso, ch4"""
     import xarray as xr
     import cartopy.crs as ccrs
     import numpy as np
@@ -419,7 +514,7 @@ def plot_figure_12(path=work_chaim):
                          projection=ccrs.PlateCarree(central_longitude=0))
     ax.coastlines()
     fg = rds.plot.contourf(ax=ax, add_colorbar=False, cmap=error_cmap,
-                           vmin=0.0, extend='both', levels=21)
+                           vmin=0.0, extend=None, levels=21)
     ax.set_title('')
     lons = rds.lon.values[0:int(len(rds.lon.values) / 2)][::2]
     lons_mirror = abs(lons[::-1])
@@ -434,7 +529,7 @@ def plot_figure_12(path=work_chaim):
     # ax.xaxis.set_major_formatter(lon_formatter)
     # ax.yaxis.set_major_formatter(lat_formatter)
     cbar_kws = {'label': '', 'format': '%0.2f'}
-    cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .025])
+    cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .035])
     plt.colorbar(fg, cax=cbar_ax, orientation="horizontal", **cbar_kws)
     gl = ax.gridlines(
         crs=ccrs.PlateCarree(),
@@ -446,8 +541,64 @@ def plot_figure_12(path=work_chaim):
     gl.xlines = True
     gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
     gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30 ,45])
+    gl.xlabel_style = {'size': 10}
+    gl.ylabel_style = {'size': 10}
     gl.xformatter = LONGITUDE_FORMATTER
     gl.yformatter = LATITUDE_FORMATTER
     fig.tight_layout()
     fig.subplots_adjust(top=0.98,left=0.06, right=0.94)
+    print('Caption: ')
+    print('The adjusted R^2 for the water vapor anomalies MLR analysis in the 82 hPa level with CH4 ,ENSO, and pressure level lag varied QBO as predictors. This MLR spans from 2004 to 2018')
+    filename = 'MLR_H2O_r2_map_82_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
+    return fg
+
+
+def plot_figure_13(path=work_chaim):
+    """params map (lat-lon) for cdas-plags, enso, ch4"""
+    import xarray as xr
+    import cartopy.crs as ccrs
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+    rds = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+    rds = rds['params'].sel(level=82, method='nearest')
+    proj = ccrs.PlateCarree(central_longitude=0)
+#    fig, axes = plt.subplots(1, 3, figsize=(17, 3.0),
+#                             subplot_kw=dict(projection=proj))
+    gl_list = []
+    fg = rds.plot.contourf(col='regressors', add_colorbar=False,
+                           cmap=predict_cmap, center=0.0, extend=None,
+                           levels=41, subplot_kws=dict(projection=proj),
+                           transform=ccrs.PlateCarree(), figsize=(17, 3))
+    cbar_kws = {'label': '', 'format': '%0.2f'}
+    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])  # last num controls width
+    fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    for ax in fg.axes.flatten():
+        ax.coastlines()
+        gl = ax.gridlines(
+            crs=ccrs.PlateCarree(),
+            linewidth=1,
+            color='black',
+            alpha=0.5,
+            linestyle='--',
+            draw_labels=True)
+        gl.xlabels_top = False
+        gl.xlabel_style = {'size': 9}
+        gl.ylabel_style = {'size': 9}
+        gl.xlines = True
+        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        gl_list.append(gl)
+        ax = remove_regressors_and_set_title(ax)
+    gl_list[0].ylabels_right = False
+    gl_list[2].ylabels_left = False
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(right=0.96, left=0.04, wspace=0.15)
+    print('Caption: ')
+    print('The beta coeffciants for the water vapor anomalies MLR analysis in the 82 hPa level at 2004 to 2018')
+    filename = 'MLR_H2O_params_map_82_cdas-plags_ch4_enso.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
