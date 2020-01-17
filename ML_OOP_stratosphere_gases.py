@@ -398,7 +398,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
     the special run
-    reg_time_shift = {'radio_cold_no_qbo':36} - get the 36 lags of the regressor
+    reg_time_shift = {'radio_cold_no_qbo':[1,36]} - get the 36 lags of the regressor
     example special_run={'optimize_time_shift':(-12,12)}
     use optimize_time_shift with area_mean=True"""
     def parse_cv(cv):
@@ -1351,6 +1351,8 @@ class Plot_type:
         data = self.parse_coord(data, 'lat')
         data = self.parse_coord(data, 'lon')
         data = self.parse_coord(data, 'level')
+        if 'time' in data.dims:
+            data = data.dropna('time')
 #        for key, val in vars(self).items():
 #            print('{}: {}'.format(key, val))
         if self.plot_type == 'sample':
@@ -1423,7 +1425,7 @@ class Plot_type:
             for key, value in attrs.items():
                 data.attrs[key] = value
             return data
-        elif self.time_mean is None and rds[self.time_dim].size > 3 and self.plot_map:
+        elif self.time_mean is None and rds[self.time_dim].size > 5 and self.plot_map:
             raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
         else:
             return rds
@@ -1734,6 +1736,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     raise Exception('pls pick a level for this plot')
                 units = data.attrs['units']
                 plt_kwargs.update({'center': 0.0, 'levels': 41})
+                plt_kwargs.update(kwargs)
                 if p.time is not None and p.time_mean is not None:
                     # rds = p.parse_coord(rds, 'time')
                     label_add += ', for times {} to {}'.format(p.time[0],
