@@ -98,9 +98,13 @@ def prepare_regressors(name='Regressors', plot=True, save=False,
                      'olr': 'olr_index.nc',
                      'ch4': 'ch4_index.nc',
                      'wind': 'era5_wind_shear_index.nc',
-                     'cold': 'cpt_index.nc'}
+                     'cold': 'cpt_index.nc',
+                     'aod': 'merra2_totexttau_index.nc'}
     if savepath is None:
         savepath = Path().cwd() / 'regressors/'
+    # aod:
+    aod = load_regressor(reg_file_dict['aod'], plot=False, dseason=False)
+    aod.name = 'aod'
     # bdc:
     bdc = load_regressor(reg_file_dict['bdc'], plot=False, deseason=True)
     if rolling is not None:
@@ -863,6 +867,27 @@ def _produce_radio_cold(savepath=None, no_qbo=False):
         print_saved_file(filename, savepath)
     return radio
 
+
+def _produce_totexttau(loadpath=work_chaim/'MERRA2/aerosol_carbon',
+                       savepath=None, indian=False):
+    import xarray as xr
+    from aux_functions_strat import lat_mean
+    ds = xr.load_dataset(loadpath / 'MERRA2_aerosol.nc')
+    ds = ds.sortby('time')
+    da = ds['TOTEXTTAU']
+    if indian:
+        da = da.sel(lat=slice(5, 30), lon=slice(65, 95))
+        filename = 'merra2_aod_indian_index.nc'
+    else:
+        filename = 'merra2_aod_index.nc'
+    da = lat_mean(da.mean('lon', keep_attrs=True))
+    da = da.resample(time='MS').mean()
+    if savepath is not None:
+        da.to_netcdf(savepath / filename, 'w')
+        print_saved_file(filename, savepath)
+    return da
+
+
 #def plot_time_over_pc_xr(pc, times, norm=5):
 #    import numpy as np
 #    import matplotlib.pyplot as plt
@@ -904,5 +929,6 @@ def _make_nc_files_run_once(loadpath=work_chaim, savepath=None):
     _ = _produce_wind_shear(source='singapore', savepath=savepath)
     _ = _produce_wind_shear(source='era5', savepath=savepath)
     _ = _produce_cpt_swoosh(savepath=savepath)
+    _ = _produce_totexttau(savepath=savepath)
     # _ = _produce_BDC(loadpath, savepath=savepath)
     return
