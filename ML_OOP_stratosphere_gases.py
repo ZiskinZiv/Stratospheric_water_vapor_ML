@@ -214,7 +214,7 @@ class ML_Switcher(object):
 
 def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                                    'qbo_cdas', 'anom_nino3p4', 'ch4'],
-                                    savepath=None):
+                                    savepath=None, latlon=False):
     """data for fig 7"""
     import xarray as xr
     seasons = ['JJA', 'SON', 'DJF', 'MAM']
@@ -224,15 +224,22 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                  regressors=plags)
     lms = rds.level_month_shift
     ds_list = []
+    if latlon:
+        start = '2004'
+        res = 'latlon'
+    else:
+        start = '1984'
+        res = 'latpress'
     for season in seasons:
         rds = run_ML(
             time_period=[
-                '1984',
+                start,
                 '2018'],
             regressors=regressors,
             season=season,
             special_run={
-                'run_with_shifted_plevels': lms})
+                'run_with_shifted_plevels': lms}, swoosh_latlon=latlon,
+                    lat_slice=[-60, 60])
         ds_list.append(rds.results_)
     to_concat_vars = [x for x in ds_list[0].keys(
             ) if 'time' not in ds_list[0][x].dims]
@@ -240,7 +247,7 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
     rds = xr.concat(ds_list, 'season')
     rds['season'] = seasons
     if savepath is not None:
-        filename = 'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2018.nc'
+        filename = 'MLR_H2O_{}_seasons_cdas-plags_ch4_enso_1984-2018.nc'.format(res)
         comp = dict(zlib=True, complevel=9)  # best compression
         encoding = {var: comp for var in rds.data_vars}
         rds.to_netcdf(savepath / filename, 'w', encoding=encoding)
@@ -1472,12 +1479,13 @@ class Plot_type:
 
 
 def plot_like_results(*results, plot_key='predict_level', level=None,
-                      res_label=None, **kwargs):
+                      res_label=None, cartopy=True, **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
     input: plot_type - dictionary of key:plot type, value - depending on plot,
     e.g., plot_type={'predict_by_lat': 82} will plot prediction + original +
     residualas by a specific pressure level"""
-    # TODO: improve predict_map_by_time_level to have single month display or season
+    # TODO: improve predict_map_by_time_level to have single month display or
+    # season
     from matplotlib.ticker import ScalarFormatter
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
@@ -1486,13 +1494,21 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
     import pandas as pd
     import numpy as np
     import warnings
+    import cartopy.crs as ccrs
     warnings.filterwarnings("ignore")
     arg_dict = locals()
     keys_to_remove = ['aux', 'np', 'pd', 'xr', 'mdates', 'ScalarFormatter',
-                      'plt', 'res_label', 'results', 'warnings']
+                      'plt', 'res_label', 'results', 'warnings', 'ccrs']
     [arg_dict.pop(key) for key in keys_to_remove]
     arg_dict.update(**kwargs)
     p = Plot_type(*results, **arg_dict)
+    proj = ccrs.PlateCarree(central_longitude=0)
+    plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+                  'add_colorbar': False, 'levels': 41,
+                  'extend': 'both'}
+    if cartopy:
+        plt_kwargs.update({'subplot_kws': dict(projection=proj),
+                           'transform': ccrs.PlateCarree()})
     if len(results) == 1:
         rds = results[0]
         data = p.prepare_to_plot_one_rds(rds)
@@ -1500,20 +1516,24 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
         geo_key = p.plot_key_list[1]
         # if key == 'predict_by_level':
         if key == 'predict':
-            plt_kwargs = {'yscale': 'log', 'yincrease': False, 'cmap': 'bwr',
-                              'figsize': (15, 10), 'add_colorbar': False,
-                              'extend': 'both'}
+            plt_kwargs.update({'yscale': 'log', 'yincrease': False, 'cmap':
+                               'bwr',
+                               'figsize': (15, 10), 'add_colorbar': False,
+                               'extend': 'both'})
             if geo_key == 'level-time':
                 if p.lat is not None:
                     label_add = ' at lat={}'.format(p.lat)
                 else:
                     if p.lat_mean:
-                        label_add = ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                        label_add = ', area mean of latitudes: {} to {}'.format(
+                            p.lat[0], p.lat[1])
                     if p.lon_mean:
-                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p,lon[1])
+                        label_add += ', area mean of longitudes: {} to {}'.format(
+                            p.lon[0], p, lon[1])
                 data = aux.xr_reindex_with_date_range(data, time_dim='time',
                                                       drop=True, freq='MS')
-                plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+                # , 'vmax': cmap_max})
+                plt_kwargs.update({'center': 0.0, 'levels': 41})
                 plt_kwargs.update(kwargs)
                 fg = data.T.plot.contourf(row='opr', **plt_kwargs)
                 cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
@@ -1540,7 +1560,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.minorticks_on()
                 # ax.xaxis.set_minor_locator(mdates.YearLocator())
                 # ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
-                plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
+                plt.setp(
+                    ax.xaxis.get_majorticklabels(),
+                    rotation=30,
+                    ha='center')
                 # plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
                 # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
                 plt.show()
@@ -1555,12 +1578,14 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     if p.lon is not None and not p.lon_mean:
                         label_add = ' at lon={}'.format(p.lon)
                     elif p.lon_mean:
-                        label_add += ', area mean of longitudes: {} to {}'.format(p.lon[0], p.lon[1])
+                        label_add += ', area mean of longitudes: {} to {}'.format(
+                            p.lon[0], p.lon[1])
                 elif geo_key == 'lon-time':
                     if p.lat is not None and not p.lat_mean:
                         label_add = ' at lat={}'.format(p.lat)
                     elif p.lat_mean:
-                        label_add += ', area mean of latitudes: {} to {}'.format(p.lat[0], p.lat[1])
+                        label_add += ', area mean of latitudes: {} to {}'.format(
+                            p.lat[0], p.lat[1])
                 data = aux.xr_reindex_with_date_range(data, time_dim='time',
                                                       drop=True, freq='MS')
                 plt_kwargs.update({'center': 0.0, 'levels': 41})
@@ -1585,7 +1610,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.minorticks_on()
                 # ax.xaxis.set_minor_locator(mdates.YearLocator())
                 # ax.xaxis.set_minor_formatter(mdates.DateFormatter("\n%Y"))
-                plt.setp(ax.xaxis.get_majorticklabels(), rotation=30, ha='center')
+                plt.setp(
+                    ax.xaxis.get_majorticklabels(),
+                    rotation=30,
+                    ha='center')
                 # plt.setp(ax.xaxis.get_minorticklabels(), rotation=30, ha='center')
                 # plt.setp(ax.get_xticklabels(), rotation=30, ha="center")
                 plt.show()
@@ -1602,15 +1630,17 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 if p.time is not None and p.time_mean is not None:
                     # rds = p.parse_coord(rds, 'time')
                     label_add += ', for times {} to {}'.format(p.time[0],
-                                                                p.time[1])
+                                                               p.time[1])
                     fg = data.plot.contourf(row=p.time_mean, col='opr',
                                             **plt_kwargs)
                 elif p.time is not None and p.time_mean is None:
                     label_add += ', for times {} to {}'.format(p.time[0],
-                                                                p.time[1])
-                    fg = data.plot.contourf(row='time', col='opr', **plt_kwargs)
+                                                               p.time[1])
+                    fg = data.plot.contourf(
+                        row='time', col='opr', **plt_kwargs)
                 elif p.time is None:
-                    raise Exception('pls pick a specific time or time range for this plot')
+                    raise Exception(
+                        'pls pick a specific time or time range for this plot')
                 cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
                 fg.add_colorbar(
                     cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
@@ -1622,17 +1652,27 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 labels = [' original', ' reconstructed', ' residuals']
                 try:
                     for i, ax in enumerate(fg.axes.flat):
-                        ax.set_title(data.attrs['long_name'] + labels[i], loc='center')
+                        ax.set_title(
+                            data.attrs['long_name'] + labels[i], loc='center')
                 except IndexError:
                     pass
+                if cartopy:
+                    [ax.coastlines() for ax in fg.axes.flatten()]
+                    [ax.gridlines(
+                        crs=ccrs.PlateCarree(),
+                        linewidth=1,
+                        color='black',
+                        alpha=0.5,
+                        linestyle='--',
+                        draw_labels=False) for ax in fg.axes.flatten()]
                 # plt_kwargs.update({'extend': 'both'})
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
                 plt.show()
                 return fg
         elif key == 'params':
-            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
-                          'add_colorbar': False,
-                          'extend': 'both'}
+            plt_kwargs.update({'cmap': 'bwr', 'figsize': (15, 10),
+                               'add_colorbar': False,
+                               'extend': 'both'})
             plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
             label_add = r'$\beta$ coefficients'
             if geo_key == 'map':
@@ -1647,6 +1687,15 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     cax=cbar_ax, orientation="horizontal", label='',
                     format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+                if cartopy:
+                    [ax.coastlines() for ax in fg.axes.flatten()]
+                    [ax.gridlines(
+                        crs=ccrs.PlateCarree(),
+                        linewidth=1,
+                        color='black',
+                        alpha=0.5,
+                        linestyle='--',
+                        draw_labels=False) for ax in fg.axes.flatten()]
     #            cb = con.colorbar
     #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
                 # plt_kwargs.update({'extend': 'both'})
@@ -1684,11 +1733,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.show()
                 return fg
         elif key == 'r2':
-            cbar_kwargs = {'format': '%.2f', 'spacing': 'proportional'}
+            cbar_kwargs = {'format': '%.2f'}  # , 'spacing': 'proportional'}
             label_add = r'Adjusted $R^2$'
-            plt_kwargs = {'cmap': 'viridis', 'figsize': (6, 8),
-                          'yincrease': False, 'levels': 41, 'vmin': 0.0,
-                          'yscale': 'log'}
+            plt_kwargs.update({'cmap': 'viridis', 'figsize': (6, 8),
+                               'yincrease': False, 'levels': 41, 'vmin': 0.0,
+                               'yscale': 'log'})
             if geo_key == 'level-lat' or geo_key == 'level-lon':
                 if geo_key == 'level-lat':
                     if p.lon is not None and not p.lon_mean:
@@ -1717,8 +1766,25 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     raise Exception('pls pick a level for this plot')
                 plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
                 plt_kwargs.update(kwargs)
-                fg = data.plot.contourf(cbar_kwargs=cbar_kwargs, **plt_kwargs)
                 # fg.colorbar.set_label(r'Adjusted $R^2$')
+                if cartopy:
+                    plt_kwargs.pop('transform')
+                    plt_kwargs.pop('figsize')
+                    ax = plt.axes(projection=proj)
+                    fg = data.plot.contourf(ax=ax, transform=ccrs.PlateCarree(),
+                                            **plt_kwargs)
+                    ax.coastlines()
+                    ax.gridlines(
+                            crs=ccrs.PlateCarree(),
+                            linewidth=1,
+                            color='black',
+                            alpha=0.5,
+                            linestyle='--',
+                            draw_labels=False)
+                else:
+                    fg = data.plot.contourf(**plt_kwargs)
+                cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .035])
+                plt.colorbar(fg, cax=cbar_ax, orientation="horizontal", **cbar_kwargs)
                 fg.colorbar.set_label('')
                 fg.ax.set_title(label_add, fontsize=12, fontweight=250)
                 fg.ax.figure.subplots_adjust(bottom=0.1, top=0.90, left=0.1)
@@ -1726,9 +1792,9 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 return fg
         elif key == 'response':
             label_add = data.attrs['long_name'] + ' response'
-            plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
-                          'add_colorbar': False, 'levels': 41, 
-                          'extend': 'both'}
+            plt_kwargs.update({'cmap': 'bwr', 'figsize': (15, 10),
+                               'add_colorbar': False, 'levels': 41,
+                               'extend': 'both'})
             if geo_key == 'map':
                 if p.level is not None:
                     label_add += ' at level= {:.2f} hPa'.format(p.level)
@@ -1755,6 +1821,15 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     cax=cbar_ax, orientation="horizontal", label=units,
                     format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+                if cartopy:
+                    [ax.coastlines() for ax in fg.axes.flatten()]
+                    [ax.gridlines(
+                        crs=ccrs.PlateCarree(),
+                        linewidth=1,
+                        color='black',
+                        alpha=0.5,
+                        linestyle='--',
+                        draw_labels=False) for ax in fg.axes.flatten()]
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
                 return fg
             elif geo_key == 'level-lat' or geo_key == 'level-lon':
