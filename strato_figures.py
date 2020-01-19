@@ -36,6 +36,15 @@ for key, val in rc.items():
 sns.set(rc=rc, style='ticks')
 
 
+def add_horizontal_colorbar(fg_obj, width=0.025, cbar_kwargs_dict=None):
+    # add option for just figure object, now, accepts facetgrid object only
+    cbar_kws = {'label': '', 'format': '%0.2f'}
+    if cbar_kwargs_dict is not None:
+        cbar_kws.update(cbar_kwargs_dict)
+    cbar_ax = fg_obj.fig.add_axes([0.1, 0.1, .8, width])  # last num controls width
+    fg_obj.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    return fg_obj
+
 def parse_quantile(rds, quan):
     vals = rds.quantile(quan)
     vals = [abs(x) for x in vals]
@@ -499,15 +508,16 @@ def plot_figure_11(path=work_chaim, robust=False):
     return fg
 
 
-def plot_figure_12(path=work_chaim):
+def plot_figure_12(path=work_chaim, rds=None, save=True):
     """r2 map (lat-lon) for cdas-plags, enso, ch4"""
     import xarray as xr
     import cartopy.crs as ccrs
     import numpy as np
     from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-    rds = xr.open_dataset(
-        path /
-        'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+    if rds is None:
+        rds = xr.open_dataset(
+                path /
+                'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
     rds = rds['r2_adj'].sel(level=82, method='nearest')
     fig = plt.figure(figsize=(11, 5))
     ax = fig.add_subplot(1, 1, 1,
@@ -516,12 +526,12 @@ def plot_figure_12(path=work_chaim):
     fg = rds.plot.contourf(ax=ax, add_colorbar=False, cmap=error_cmap,
                            vmin=0.0, extend=None, levels=21)
     ax.set_title('')
-    lons = rds.lon.values[0:int(len(rds.lon.values) / 2)][::2]
-    lons_mirror = abs(lons[::-1])
-    lons = np.concatenate([lons, lons_mirror])
-    lats = rds.lat.values[0:int(len(rds.lat.values) / 2)][::2]
-    lats_mirror = abs(lats[::-1])
-    lats = np.concatenate([lats, lats_mirror])
+#    lons = rds.lon.values[0:int(len(rds.lon.values) / 2)][::2]
+#    lons_mirror = abs(lons[::-1])
+#    lons = np.concatenate([lons, lons_mirror])
+#    lats = rds.lat.values[0:int(len(rds.lat.values) / 2)][::2]
+#    lats_mirror = abs(lats[::-1])
+#    lats = np.concatenate([lats, lats_mirror])
     # ax.set_xticks(lons, crs=ccrs.PlateCarree())
     # ax.set_yticks(lats, crs=ccrs.PlateCarree())
     # lon_formatter = LongitudeFormatter(zero_direction_label=True)
@@ -550,18 +560,20 @@ def plot_figure_12(path=work_chaim):
     print('Caption: ')
     print('The adjusted R^2 for the water vapor anomalies MLR analysis in the 82 hPa level with CH4 ,ENSO, and pressure level lag varied QBO as predictors. This MLR spans from 2004 to 2018')
     filename = 'MLR_H2O_r2_map_82_cdas-plags_ch4_enso.png'
-    plt.savefig(savefig_path / filename, bbox_inches='tight')
+    if save:
+        plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
-def plot_figure_13(path=work_chaim):
+def plot_figure_13(path=work_chaim, rds=None, save=True):
     """params map (lat-lon) for cdas-plags, enso, ch4"""
     import xarray as xr
     import cartopy.crs as ccrs
     from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-    rds = xr.open_dataset(
-        path /
-        'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+    if rds is None:
+        rds = xr.open_dataset(
+            path /
+            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
     rds = rds['params'].sel(level=82, method='nearest')
     proj = ccrs.PlateCarree(central_longitude=0)
 #    fig, axes = plt.subplots(1, 3, figsize=(17, 3.0),
@@ -600,5 +612,6 @@ def plot_figure_13(path=work_chaim):
     print('Caption: ')
     print('The beta coeffciants for the water vapor anomalies MLR analysis in the 82 hPa level at 2004 to 2018')
     filename = 'MLR_H2O_params_map_82_cdas-plags_ch4_enso.png'
-    plt.savefig(savefig_path / filename, bbox_inches='tight')
+    if save:
+        plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
