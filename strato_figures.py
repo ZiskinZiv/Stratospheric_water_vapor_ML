@@ -20,8 +20,8 @@ from palettable.colorbrewer import diverging as divbr
 from matplotlib.colors import ListedColormap
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 from pathlib import Path
+from strat_paths import savefig_path
 
-savefig_path = Path('/home/shlomi/Pictures')
 error_cmap = seqsci.Nuuk_11.mpl_colormap
 error_cmap = seqbr.YlGnBu_9.mpl_colormap
 # predict_cmap = ListedColormap(divbr.BrBG_11.mpl_colors)
@@ -34,7 +34,7 @@ rc = {
 for key, val in rc.items():
     rcParams[key] = val
 sns.set(rc=rc, style='ticks')
-
+fields_dict = {'r2_adj': r'Adjusted R$^2$', 'params': r'$\beta$ coeffs'}
 
 def add_horizontal_colorbar(fg_obj, width=0.025, cbar_kwargs_dict=None):
     # add option for just figure object, now, accepts facetgrid object only
@@ -612,6 +612,56 @@ def plot_figure_13(path=work_chaim, rds=None, save=True):
     print('Caption: ')
     print('The beta coeffciants for the water vapor anomalies MLR analysis in the 82 hPa level at 2004 to 2018')
     filename = 'MLR_H2O_params_map_82_cdas-plags_ch4_enso.png'
+    if save:
+        plt.savefig(savefig_path / filename, bbox_inches='tight')
+    return fg
+
+
+def plot_figure_seasons(path=work_chaim, rds=None, field='r2_adj', level=82,
+                        save=True, add_to_suptitle=None):
+    import xarray as xr
+    import cartopy.crs as ccrs
+    if field == 'r2_adj':
+        cmap = error_cmap
+        center = None
+        vmin = 0.0
+        col = 'season'
+        row = None
+        figsize = (17, 3)
+    elif field == 'params':
+        cmap = predict_cmap
+        vmin = None
+        center = 0.0
+        col = 'regressors'
+        row = 'season'
+        figsize = (17, 17)
+    proj = ccrs.PlateCarree(central_longitude=0)
+    if rds is None:
+        rds = xr.open_dataset(
+            path /
+            '')
+    rds = rds[field].sel(level=level, method='nearest')
+    fg = rds.plot.contourf(col=col, row=row, add_colorbar=False,
+                           cmap=cmap, center=center, vmin=vmin, extend=None,
+                           levels=41, subplot_kws=dict(projection=proj),
+                           transform=ccrs.PlateCarree(), figsize=figsize)
+    fg = add_horizontal_colorbar(fg, width=0.025, cbar_kwargs_dict=None)
+    [ax.coastlines() for ax in fg.axes.flatten()]
+    [ax.gridlines(
+        crs=ccrs.PlateCarree(),
+        linewidth=1,
+        color='black',
+        alpha=0.5,
+        linestyle='--',
+        draw_labels=False) for ax in fg.axes.flatten()]
+    filename = 'MLR_H2O_{}_map_{}_cdas-plags_ch4_enso_seasons.png'.format(
+        field, level)
+    sup = '{} for the {} hPa level'.format(fields_dict[field], level)
+    if add_to_suptitle is not None:
+        sup += add_to_suptitle
+    fg.fig.suptitle(sup)
+    if field == 'params':
+        fg.fig.subplots_adjust(bottom=0.11, top=0.95)
     if save:
         plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
