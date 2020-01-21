@@ -382,7 +382,7 @@ def plot_figure_8(path=work_chaim):
     import xarray as xr
     from ML_OOP_stratosphere_gases import plot_like_results
     rds = xr.open_dataset(
-        path / 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_36lags_2004-2018.nc')
+        path / 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_lat-time', level=82,
                            cmap=predict_cmap, extend=None)
     top_ax = fg.axes[0][0]
@@ -404,7 +404,7 @@ def plot_figure_8(path=work_chaim):
         ax.set_ylabel('')
         ax = plot_forecast_busts_lines(ax, color='k')
     print('Caption: ')
-    print('The zonal mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, BDC, T500 and pressure level lag varied QBO as predictors. Note that T500 and BDC predictors were not able to deal with the forecast busts')
+    print('The zonal mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, radio cpt with 6 months lags and pressure level lag varied QBO as predictors. Note that the radio cpt predictor and its 6 lags were able to deal with the forecast busts succsesfully')
     filename = 'MLR_H2O_predict_lat-time_82_cdas-plags_radio_cold36_ch4_enso.png'
     plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
@@ -415,7 +415,7 @@ def plot_figure_9(path=work_chaim, robust=False):
     import xarray as xr
     rds = xr.open_dataset(
         path /
-        'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_36lags_2004-2018.nc')
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2018.nc')
     fg = plot_like_results(rds, plot_key='predict_lon-time', level=82,
                            cmap=predict_cmap, robust=robust, extend=None)
     top_ax = fg.axes[0][0]
@@ -437,7 +437,7 @@ def plot_figure_9(path=work_chaim, robust=False):
         ax.set_ylabel('')
         ax = plot_forecast_busts_lines(ax, color='k')
     print('Caption: ')
-    print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, BDC, T500 and pressure level lag varied QBO as predictors. Note that T500 and BDC predictors were not able to deal with the forecast busts')
+    print('The meridional mean water vapor anomalies for the 82 hPa level and their MLR reconstruction and residuals, spanning from 2004 to 2018. This MLR analysis was carried out with CH4 ,ENSO, radio cpt with 6 months lags and pressure level lag varied QBO as predictors. Note that the radio cpt predictor and its 6 lags were able to deal with the forecast busts succsesfully')
     filename = 'MLR_H2O_predict_lon-time_82_cdas-plags_radio_cold36_ch4_enso.png'
     plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg

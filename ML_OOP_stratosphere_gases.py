@@ -1479,7 +1479,7 @@ class Plot_type:
 
 
 def plot_like_results(*results, plot_key='predict_level', level=None,
-                      res_label=None, cartopy=True, **kwargs):
+                      res_label=None, cartopy=False, **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
     input: plot_type - dictionary of key:plot type, value - depending on plot,
     e.g., plot_type={'predict_by_lat': 82} will plot prediction + original +
@@ -1675,6 +1675,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                                'extend': 'both'})
             plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
             label_add = r'$\beta$ coefficients'
+            if data.regressors.size > 5:
+                plt_kwargs.update(col_wrap = 4)
+            else:
+                plt_kwargs.update(col_wrap = None)
             if geo_key == 'map':
                 plt_kwargs.update(kwargs)
                 if p.level is not None:
