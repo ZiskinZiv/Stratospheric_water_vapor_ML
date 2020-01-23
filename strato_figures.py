@@ -36,12 +36,13 @@ for key, val in rc.items():
 sns.set(rc=rc, style='ticks')
 fields_dict = {'r2_adj': r'Adjusted R$^2$', 'params': r'$\beta$ coeffs'}
 
-def add_horizontal_colorbar(fg_obj, width=0.025, cbar_kwargs_dict=None):
+def add_horizontal_colorbar(fg_obj, rect=[0.1, 0.1, 0.8, 0.025], cbar_kwargs_dict=None):
+    # rect = [left, bottom, width, height]
     # add option for just figure object, now, accepts facetgrid object only
     cbar_kws = {'label': '', 'format': '%0.2f'}
     if cbar_kwargs_dict is not None:
         cbar_kws.update(cbar_kwargs_dict)
-    cbar_ax = fg_obj.fig.add_axes([0.1, 0.1, .8, width])  # last num controls width
+    cbar_ax = fg_obj.fig.add_axes(rect)
     fg_obj.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
     return fg_obj
 
@@ -67,6 +68,23 @@ def plot_forecast_busts_lines(ax, color='r', style='--'):
     ax.axvline('2016-01', c=color, ls=style)
     ax.axvline('2016-09', c=color, ls=style)
     ax.axvline('2017-01', c=color, ls=style)
+    return ax
+
+
+def remove_time_and_set_date(ax):
+    if ax.texts:
+    # This contains the right ylabel text
+        txt = ax.texts[0]
+        label = txt.get_text()
+        label = '-'.join(label.split('=')[-1].strip(' ').split('-')[0:2])
+        ax.text(txt.get_unitless_position()[0], txt.get_unitless_position()[1],
+                label,
+                transform=ax.transAxes,
+                va='center',
+                # fontsize='xx-large',
+                rotation=-90)
+        # Remove the original text
+        ax.texts[0].remove()
     return ax
 
 
@@ -664,4 +682,53 @@ def plot_figure_seasons(path=work_chaim, rds=None, field='r2_adj', level=82,
         fg.fig.subplots_adjust(bottom=0.11, top=0.95)
     if save:
         plt.savefig(savefig_path / filename, bbox_inches='tight')
+    return fg
+
+
+def plot_figure_14(path=work_chaim, save=True):
+    """response map (lat-lon) for cdas-plags, enso, ch4 for 2010D-2011JFM bust"""
+    import xarray as xr
+    import cartopy.crs as ccrs
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+    from ML_OOP_stratosphere_gases import plot_like_results
+    rds = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+    fg = plot_like_results(rds, plot_key='response_map', level=82,
+                           cartopy=True, time=['2010-12', '2011-03'])
+    rds = fg.data
+    proj = ccrs.PlateCarree(central_longitude=0)
+    fg = rds.plot.contourf(col='regressors', row='time', add_colorbar=False,
+                           cmap=predict_cmap, center=0.0, extend=None,
+                           levels=41, subplot_kws=dict(projection=proj),
+                           transform=ccrs.PlateCarree(), figsize=(16, 12))
+    fg = add_horizontal_colorbar(fg, rect=[0.1, 0.04, 0.8, 0.020])
+    for i, ax in enumerate(fg.axes.flatten()):
+        ax.coastlines()
+        gl = ax.gridlines(crs=ccrs.PlateCarree(),
+            linewidth=1,
+            color='black',
+            alpha=0.5,
+            linestyle='--',
+            draw_labels=True)
+        gl.xlabels_top = False
+        gl.ylabels_right = False
+        if i < 9:
+            gl.xlabels_bottom = False
+        gl.xlabel_style = {'size': 9}
+        gl.ylabel_style = {'size': 9}
+        gl.xlines = True
+        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        ax = remove_regressors_and_set_title(ax)
+        ax = remove_time_and_set_date(ax)
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(bottom=0.10, top=0.97, left=0.03, hspace=0.21, wspace=0.14, right=0.97)
+    print('Caption: ')
+    print('The water vapor anomalies predictor response map for the 82 hPa level in the 2010-D to 2011-JFM forecast bust.')
+    filename = 'MLR_H2O_response_map_82_cdas-plags_ch4_enso_2010D2011JFM.png'
+    if save:
+        fg.fig.savefig(savefig_path / filename, bbox_inches=None, pad_inches=0.0, orientation='landscape')
     return fg
