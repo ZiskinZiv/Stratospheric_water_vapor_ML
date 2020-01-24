@@ -1479,7 +1479,8 @@ class Plot_type:
 
 
 def plot_like_results(*results, plot_key='predict_level', level=None,
-                      res_label=None, cartopy=False, **kwargs):
+                      res_label=None, cartopy=False, no_colorbar=False,
+                      **kwargs):
     """flexible plot like function for results_ xarray attr from run_ML.
     input: plot_type - dictionary of key:plot type, value - depending on plot,
     e.g., plot_type={'predict_by_lat': 82} will plot prediction + original +
@@ -1536,10 +1537,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt_kwargs.update({'center': 0.0, 'levels': 41})
                 plt_kwargs.update(kwargs)
                 fg = data.T.plot.contourf(row='opr', **plt_kwargs)
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
+                        format='%0.3f')
                 fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
     #            cb = con.colorbar
     #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
@@ -1592,10 +1594,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
                 plt_kwargs.update(kwargs)
                 fg = data.T.plot.contourf(row='opr', **plt_kwargs)
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
+                        format='%0.3f')
                 fg.fig.suptitle(res_label, fontsize=12, fontweight=750)
     #            cb = con.colorbar
     #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
@@ -1641,10 +1644,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 elif p.time is None:
                     raise Exception(
                         'pls pick a specific time or time range for this plot')
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label=data.attrs['units'],
+                        format='%0.3f')
                 # suptitle = 'time= {}'.format(date)
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
     #            cb = con.colorbar
@@ -1686,10 +1690,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 else:
                     raise Exception('pls pick a level for this plot')
                 fg = data.plot.contourf(col='regressors', **plt_kwargs)
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label='',
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label='',
+                        format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
                 if cartopy:
                     [ax.coastlines() for ax in fg.axes.flatten()]
@@ -1720,10 +1725,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt_kwargs.update({'yscale': 'log', 'yincrease': False})
                 plt_kwargs.update(kwargs)
                 fg = data.plot.contourf(col='regressors', **plt_kwargs)
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label='',
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label='',
+                        format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
                 ax = [ax for ax in fg.axes.flat][2]
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
@@ -1737,7 +1743,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.show()
                 return fg
         elif key == 'r2':
-            cbar_kwargs = {'format': '%.2f'}  # , 'spacing': 'proportional'}
+            cbar_kwargs = {'format': '%.2f', 'aspect': 50}  # , 'spacing': 'proportional'}
             label_add = r'Adjusted $R^2$'
             plt_kwargs.update({'cmap': 'viridis', 'figsize': (6, 8),
                                'yincrease': False, 'levels': 41, 'vmin': 0.0,
@@ -1787,9 +1793,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                             draw_labels=False)
                 else:
                     fg = data.plot.contourf(**plt_kwargs)
-                cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .035])
-                plt.colorbar(fg, cax=cbar_ax, orientation="horizontal", **cbar_kwargs)
-                fg.colorbar.set_label('')
+                if not no_colorbar:
+                    cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .035])
+                    plt.colorbar(fg, cax=cbar_ax, orientation="horizontal", **cbar_kwargs)
+                    fg.colorbar.set_label('')
                 fg.ax.set_title(label_add, fontsize=12, fontweight=250)
                 fg.ax.figure.subplots_adjust(bottom=0.1, top=0.90, left=0.1)
                 plt.show()
@@ -1820,10 +1827,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                                             **plt_kwargs)
                 elif p.time is None:
                     raise Exception('pls pick a specific time or time range for this plot')
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label=units,
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label=units,
+                        format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
                 if cartopy:
                     [ax.coastlines() for ax in fg.axes.flatten()]
@@ -1855,10 +1863,11 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                                                                p.time[1])
                     fg = data.plot.contourf(row=p.time_mean, col='regressors',
                                             **plt_kwargs)
-                cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-                fg.add_colorbar(
-                    cax=cbar_ax, orientation="horizontal", label='',
-                    format='%0.3f')
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label='',
+                        format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
                 ax = [ax for ax in fg.axes.flat][2]
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
