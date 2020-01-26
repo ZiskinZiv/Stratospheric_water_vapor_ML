@@ -19,6 +19,7 @@ from palettable.scientific import diverging as divsci
 from palettable.colorbrewer import diverging as divbr
 from matplotlib.colors import ListedColormap
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+import matplotlib.ticker as ticker
 from pathlib import Path
 from strat_paths import savefig_path
 
@@ -36,6 +37,7 @@ for key, val in rc.items():
 sns.set(rc=rc, style='ticks')
 fields_dict = {'r2_adj': r'Adjusted R$^2$', 'params': r'$\beta$ coeffs'}
 
+
 def add_horizontal_colorbar(fg_obj, rect=[0.1, 0.1, 0.8, 0.025], cbar_kwargs_dict=None):
     # rect = [left, bottom, width, height]
     # add option for just figure object, now, accepts facetgrid object only
@@ -45,6 +47,7 @@ def add_horizontal_colorbar(fg_obj, rect=[0.1, 0.1, 0.8, 0.025], cbar_kwargs_dic
     cbar_ax = fg_obj.fig.add_axes(rect)
     fg_obj.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
     return fg_obj
+
 
 def parse_quantile(rds, quan):
     vals = rds.quantile(quan)
@@ -69,6 +72,23 @@ def plot_forecast_busts_lines(ax, color='r', style='--'):
     ax.axvline('2016-09', c=color, ls=style)
     ax.axvline('2017-01', c=color, ls=style)
     return ax
+
+
+#def add_season_equals(ax):
+#    if ax.texts:
+#        # This contains the right ylabel text
+#        txt = ax.texts[0]
+#        label = txt.get_text()
+#        label = 'season = {}'.format(label)
+#        ax.text(txt.get_unitless_position()[0], txt.get_unitless_position()[1],
+#                label,
+#                transform=ax.transAxes,
+#                va='center',
+#                # fontsize='xx-large',
+#                rotation=-90)
+#        # Remove the original text
+#        ax.texts[0].remove()
+#    return ax
 
 
 def remove_time_and_set_date(ax):
@@ -121,55 +141,28 @@ def remove_regressors_and_set_title(ax, set_title_only=None):
     return ax
 
 
-def change_ticks_lat(fig, ax, draw=True, which_axes='x'):
-    if draw:
-        fig.canvas.draw()
-    if which_axes == 'x':
-        labels = [item.get_text() for item in ax.get_xticklabels()]
-    elif which_axes == 'y':
-        labels = [item.get_text() for item in ax.get_yticklabels()]
-    labels = [x.replace('−', '-') for x in labels]
-    labels = [int(x) for x in labels]
-    xlabels = []
-    for label in labels:
-        if label < 0:
-            xlabel = r'{}$\degree$S'.format(str(label).split('-')[-1])
-        elif label > 0:
-            xlabel = r'{}$\degree$N'.format(label)
-        elif label == 0:
-            xlabel = r'0$\degree$'
-        xlabels.append(xlabel)
-    if which_axes == 'x':
-        ax.set_xticklabels(xlabels)
-    elif which_axes == 'y':
-        ax.set_yticklabels(xlabels)
-    return ax
-    # ax.set_xticklabels(xlabels)
+@ticker.FuncFormatter
+def lon_formatter(x, pos):
+    if x < 0:
+        return r'{0:.0f}$\degree$W'.format(abs(x))
+    elif x > 0:
+        return r'{0:.0f}$\degree$E'.format(abs(x))
+    elif x == 0:
+        return r'0$\degree$'
+
+@ticker.FuncFormatter
+def lat_formatter(x, pos):
+    if x < 0:
+        return r'{0:.0f}$\degree$S'.format(abs(x))
+    elif x > 0:
+        return r'{0:.0f}$\degree$N'.format(abs(x))
+    elif x == 0:
+        return r'0$\degree$'
 
 
-def change_ticks_lon(fig, ax, draw=True, which_axes='x'):
-    if draw:
-        fig.canvas.draw()
-    if which_axes == 'x':
-        labels = [item.get_text() for item in ax.get_xticklabels()]
-    elif which_axes == 'y':
-        labels = [item.get_text() for item in ax.get_yticklabels()]
-    labels = [x.replace('−', '-') for x in labels]
-    labels = [int(x) for x in labels]
-    xlabels = []
-    for label in labels:
-        if label < 0:
-            xlabel = r'{}$\degree$W'.format(str(label).split('-')[-1])
-        elif label > 0:
-            xlabel = r'{}$\degree$E'.format(label)
-        elif label == 0:
-            xlabel = r'$\degree$0'
-        xlabels.append(xlabel)
-    if which_axes == 'x':
-        ax.set_xticklabels(xlabels)
-    elif which_axes == 'y':
-        ax.set_yticklabels(xlabels)
-    return ax
+@ticker.FuncFormatter
+def single_digit_formatter(x, pos):
+    return '{0:.0f}'.format(x)
 
 
 def change_xticks_years(ax, start=1984, end=2018):
@@ -258,11 +251,13 @@ def plot_figure_2(path=work_chaim, robust=False):
     # remove time from xlabel:
     bottom_ax.set_xlabel('')
     # new ticks:
-    ax = change_xticks_years(bottom_ax, start=1985, end=2018)
+    bottom_ax = change_xticks_years(bottom_ax, start=1985, end=2018)
     top_ax.set_title(
         r'Area-averaged (weighted by cosine of latitudes 60$\degree$S to 60$\degree$N) combined water vapor anomaly')
     mid_ax.set_title('MLR reconstruction')
     bottom_ax.set_title('Residuals')
+    [ax.yaxis.set_major_formatter(single_digit_formatter)
+     for ax in [top_ax, mid_ax, bottom_ax]]
     fg = add_horizontal_colorbar(fg, [0.125, 0.057, 0.8, 0.02],
                                  cbar_kwargs_dict={'label': 'ppmv'})
     fg.fig.tight_layout()
@@ -283,7 +278,8 @@ def plot_figure_3(path=work_chaim):
     fg = plot_like_results(rds, plot_key='r2_level-lat', cmap=error_cmap,
                            extend=None, add_colorbar=True)
     fg.ax.set_title('')
-    ax = change_ticks_lat(fg.ax.figure, fg.ax)
+    fg.ax.xaxis.set_major_formatter(lat_formatter)
+    fg.ax.yaxis.set_major_formatter(single_digit_formatter)
     fg.ax.figure.tight_layout()
     fg.ax.figure.subplots_adjust(left=0.15, right=1.0, bottom=0.05, )
     fg.ax.set_xlabel('')
@@ -305,9 +301,11 @@ def plot_figure_4(path=work_chaim):
     fg.fig.suptitle('')
     fg.fig.canvas.draw()
     for ax in fg.axes.flatten():
-        ax = change_ticks_lat(fg.fig, ax, draw=False)
+        ax.yaxis.set_major_formatter(single_digit_formatter)
+        ax.xaxis.set_major_formatter(lat_formatter)
         ax.set_xlabel('')
         ax = remove_regressors_and_set_title(ax)
+        
     fg = add_horizontal_colorbar(fg, [0.125, 0.1, 0.8, 0.02],
                                  cbar_kwargs_dict={'label': ''})
     fg.fig.tight_layout()
@@ -344,7 +342,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
                 'lat': r'Area-averaged (from 180$\degree$W to 180$\degree$E longitudes) zonal wind anomaly for the {} hPa pressure level'.format(level),
                 'lon': r'Area-averaged (weighted by cosine of latitudes 60$\degree$S to 60$\degree$N) zonal wind anomaly for the {} hPa pressure level'.format(level)}
         st_year = 1984
-        unit = r'm*sec$^{-1}$'
+        unit = r'm$\cdot$sec$^{-1}$'
     fg = plot_like_results(rds, plot_key='predict_{}-time'.format(geo),
                            level=level, cmap=predict_cmap, extend=None,
                            no_colorbar=True)
@@ -358,12 +356,12 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
     top_ax.set_title(geo_title.get(geo))
     mid_ax.set_title('MLR reconstruction')
     bottom_ax.set_title('Residuals')
-    fg.fig.canvas.draw()
-    for ax in fg.axes.flatten():
-        if geo == 'lat':
-            ax = change_ticks_lat(fig=fg.fig, ax=ax, which_axes='y', draw=False)
-        elif geo == 'lon':
-            ax = change_ticks_lon(fig=fg.fig, ax=ax, which_axes='y', draw=False)
+    # fg.fig.canvas.draw()
+    for ax in [top_ax, mid_ax, bottom_ax]:
+        if geo == 'lon':
+            ax.yaxis.set_major_formatter(lon_formatter)
+        elif geo == 'lat':
+            ax.yaxis.set_major_formatter(lat_formatter)
         ax.set_ylabel('')
         if bust_lines:
             ax = plot_forecast_busts_lines(ax, color='k')
@@ -373,7 +371,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
     fg.fig.subplots_adjust(left=0.05, bottom=0.14)
     if save:
         filename = 'MLR_{}_predict_{}-time_{}_{}_{}-2018.png'.format(species, geo, math.floor(level), regs, st_year)
-        fg.fig.savefig(savefig_path / filename, bbox_inches='tight')
+        fg.fig.savefig(savefig_path / filename , bbox_inches='tight')
     return fg
 
 
@@ -395,7 +393,7 @@ def plot_figure_6(path=work_chaim):
     return fg
 
 
-def plot_figure_seasons(ncfile, path=work_chaim):
+def plot_figure_seasons(ncfile, path=work_chaim, field='params'):
     import xarray as xr
     rds = xr.open_dataset(path / ncfile)
     species = ncfile.split('.')[0].split('_')[1]
@@ -404,7 +402,9 @@ def plot_figure_seasons(ncfile, path=work_chaim):
     elif species == 't':
         unit = 'K'
     elif species == 'u':
-        unit = r'm*sec$^{-1}$'
+        unit = r'm$\cdot$sec$^{-1}$'
+    if field == 'params':
+        unit = ''
     regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
     syear = ncfile.split('.')[0].split('_')[-1].split('-')[0]
     eyear = ncfile.split('.')[0].split('_')[-1].split('-')[-1]
@@ -413,17 +413,19 @@ def plot_figure_seasons(ncfile, path=work_chaim):
                   'add_colorbar': False,
                   'extend': None, 'yscale': 'log',
                   'yincrease': False, 'center': 0.0, 'levels': 41}
-    fg = rds['params'].plot.contourf(
+    fg = rds[field].plot.contourf(
         col='regressors', row='season', **plt_kwargs)
-    fg = add_horizontal_colorbar(fg, [0.1, 0.065, 0.8, 0.015], cbar_kwargs_dict={'label': ''})
+    fg = add_horizontal_colorbar(fg, [0.1, 0.065, 0.8, 0.015], cbar_kwargs_dict={'label': unit})
     fg.fig.subplots_adjust(bottom=0.13, top=0.95, left=0.06)
     [ax.invert_yaxis() for ax in fg.axes.flat]
     [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in fg.axes.flat]
+    [ax.yaxis.set_major_formatter(single_digit_formatter)
+     for ax in fg.axes.flat]
     for top_ax in fg.axes[0]:
         remove_regressors_and_set_title(top_ax)
     fg.fig.canvas.draw()
     for bottom_ax in fg.axes[-1]:
-        change_ticks_lat(fg.fig, bottom_ax, draw=False)
+        bottom_ax.xaxis.set_major_formatter(lat_formatter)
         bottom_ax.set_xlabel('')
     filename = 'MLR_{}_params_level-lat_{}_{}-{}.png'.format(species, regs, syear, eyear)
     plt.savefig(savefig_path / filename, bbox_inches='tight')
@@ -432,7 +434,7 @@ def plot_figure_seasons(ncfile, path=work_chaim):
 
 def plot_figure_7(path=work_chaim):
     ncfile = 'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2018.nc'
-    fg = plot_figure_seasons(ncfile, path)
+    fg = plot_figure_seasons(ncfile, path, field='params')
     print('Caption: ')
     print('The beta coefficients for the water vapor MLR season analysis for pressure levels vs. latitude with  CH4, ENSO  pressure level lag varied QBO as predictors. This MLR analysis spanned from 1984 to 2018. Note that ENSO is dominant in the MAM season')  
     return fg
@@ -634,11 +636,10 @@ def plot_figure_seasons_map(path=work_chaim, rds=None, field='r2_adj', level=82,
     return fg
 
 
-
-
 def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
                                       field='response', bust='2010D-2011JFM',
-                                      save=True):
+                                      time_mean=None, time=None, 
+                                      proj_key='PlateCarree', save=True):
     """response/predict maps (lat-lon) for cdas-plags, enso, ch4 for 2010D-2011JFM bust"""
     import xarray as xr
     import cartopy.crs as ccrs
@@ -665,65 +666,85 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
             path /
             'MLR_u_85hpa_latlon_cdas-plags_ch4_enso_1984-2018.nc')
         level = 85
-        unit = r'm*sec$^{-1}$'
-    time = time_dict.get(bust)
+        unit = r'm$\cdot$sec$^{-1}$'
+    if time is None:
+        time = time_dict.get(bust)
     fg = plot_like_results(rds, plot_key='{}_map'.format(field), level=level,
-                           cartopy=True, time=time)
+                           cartopy=True, time=time, time_mean=time_mean)
     rds = fg.data.sel(lat=slice(-60, 60))
-    if rds.time.size == 4:
+    if time_mean == 'season':
+        size = 4
+    else:
+        size = rds.time.size
+    if size == 4:
         figsize = (15, 10)
         s_adjust = {'bottom': 0.08, 'top': 0.98, 'left': 0.03, 'right': 0.97,
                     'hspace': 0.0, 'wspace': 0.15}
         rect = [0.1, 0.057, 0.8, 0.01]
         i_label = 9
-    elif rds.time.size == 3:
+    elif size == 3:
         figsize = (15, 6)   # bottom=0.2, top=0.9, left=0.05
         s_adjust = {'bottom': 0.15, 'top': 0.97, 'left': 0.04, 'right': 0.97,
                     'hspace': 0.03, 'wspace': 0.18}
         rect = [0.1, 0.1, 0.8, 0.015]
         i_label = 6
-    proj = ccrs.PlateCarree(central_longitude=0)
-    fg = rds.plot.contourf(col=col_dict.get(field), row='time',
+    proj = getattr(ccrs, proj_key)(central_longitude=0.0)
+    if time_mean is not None:
+        row = time_mean
+    else:
+        row = 'time'
+    fg = rds.plot.contourf(col=col_dict.get(field), row=row,
                            add_colorbar=False,
                            cmap=predict_cmap, center=0.0, extend=None,
-                           levels=41, subplot_kws=dict(projection=proj),
+                           levels=41, subplot_kws={'projection': proj},
                            transform=ccrs.PlateCarree(), figsize=figsize)
     fg = add_horizontal_colorbar(
         fg, rect=rect, cbar_kwargs_dict={
             'label': unit})
     for i, ax in enumerate(fg.axes.flatten()):
-        ax.coastlines()
-        gl = ax.gridlines(crs=ccrs.PlateCarree(),
-                          linewidth=1,
-                          color='black',
-                          alpha=0.5,
-                          linestyle='--',
-                          draw_labels=True)
-        gl.xlabels_top = False
-        gl.ylabels_right = False
-        if i < i_label:
-            gl.xlabels_bottom = False
-        gl.xlabel_style = {'size': 9}
-        gl.ylabel_style = {'size': 9}
-        gl.xlines = True
-        gl.ylines = True
-        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
-        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
-        gl.xformatter = LONGITUDE_FORMATTER
-        gl.yformatter = LATITUDE_FORMATTER
+        ax.coastlines(resolution='110m')
+        if proj_key == 'PlateCarree':
+            gl = ax.gridlines(crs=ccrs.PlateCarree(),
+                              linewidth=1,
+                              color='black',
+                              alpha=0.5,
+                              linestyle='--',
+                              draw_labels=True)
+            gl.xlabels_top = False
+            gl.ylabels_right = False
+            if i < i_label:
+                gl.xlabels_bottom = False
+            gl.xlabel_style = {'size': 9}
+            gl.ylabel_style = {'size': 9}
+            gl.xlines = True
+            gl.ylines = True
+            gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+            gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+            gl.xformatter = LONGITUDE_FORMATTER
+            gl.yformatter = LATITUDE_FORMATTER
+        else:
+            gl = ax.gridlines(crs=ccrs.PlateCarree(),
+                              linewidth=1,
+                              color='black',
+                              alpha=0.5,
+                              linestyle='--',
+                              draw_labels=False)
         if field == 'response':
             ax = remove_regressors_and_set_title(ax)
         elif field == 'predict':
             ax = remove_anomaly_and_set_title(ax, species=species)
-        ax = remove_time_and_set_date(ax)
+        if time_mean != 'season':
+            ax = remove_time_and_set_date(ax)
     fg.fig.tight_layout()
     fg.fig.subplots_adjust(**s_adjust)
+    if time is not None and time_mean == 'season':
+        bust = '{}_seasons'.format(time)
     filename = 'MLR_{}_{}_map_{}_cdas-plags_ch4_enso_{}.png'.format(species,
                                                                     field,
                                                                     level,
                                                                     bust)
     if save:
-        fg.fig.savefig(savefig_path / filename, bbox_inches=None, pad_inches=0.0, orientation='landscape')
+        fg.fig.savefig(savefig_path / filename, bbox_inches='tight', orientation='landscape')
     return fg
 
 
@@ -732,7 +753,7 @@ def plot_figure_14(path=work_chaim):
                                            field='response',
                                            bust='2010D-2011JFM', save=True)
     print('Caption: ')
-    print('The water vapor anomalies predictor response map for the 82 hPa level in the 2010-D to 2011-JFM forecast bust.')
+    print('The water vapor anomalies predictor response map for the 82.54 hPa level in the 2010-D to 2011-JFM forecast bust.')
     return fg
 
 
@@ -749,7 +770,7 @@ def plot_figure_16(path=work_chaim):
                                            field='predict',
                                            bust='2010D-2011JFM', save=True)
     print('Caption: ')
-    print('The water vapor anomalies, reconstruction and residuals maps for the 82 hPa level in the 2010-D to 2011-JFM forecast bust.')
+    print('The water vapor anomalies, reconstruction and residuals maps for the 82.54 hPa level in the 2010-D to 2011-JFM forecast bust.')
     return fg
 
 
@@ -758,7 +779,7 @@ def plot_figure_17(path=work_chaim):
                                            field='response',
                                            bust='2015OND', save=True)
     print('Caption: ')
-    print('The water vapor anomalies predictor response map for the 82 hPa level in the 2015-OND forecast bust.')
+    print('The water vapor anomalies predictor response map for the 82.54 hPa level in the 2015-OND forecast bust.')
     return fg
 
 
@@ -775,7 +796,7 @@ def plot_figure_19(path=work_chaim):
                                            field='predict',
                                            bust='2015OND', save=True)
     print('Caption: ')
-    print('The water vapor anomalies, reconstruction and residuals maps for the 82 hPa level in the 2015-OND forecast bust.')
+    print('The water vapor anomalies, reconstruction and residuals maps for the 82.54 hPa level in the 2015-OND forecast bust.')
     return fg
 
 
@@ -784,7 +805,7 @@ def plot_figure_20(path=work_chaim):
                                            field='response',
                                            bust='2016OND', save=True)
     print('Caption: ')
-    print('The water vapor anomalies predictor response map for the 82 hPa level in the 2016-OND forecast bust.')
+    print('The water vapor anomalies predictor response map for the 82.54 hPa level in the 2016-OND forecast bust.')
     return fg
 
 
@@ -801,5 +822,59 @@ def plot_figure_22(path=work_chaim):
                                            field='predict',
                                            bust='2016OND', save=True)
     print('Caption: ')
-    print('The water vapor anomalies, reconstruction and residuals maps for the 82 hPa level in the 2016-OND forecast bust.')
+    print('The water vapor anomalies, reconstruction and residuals maps for the 82.54 hPa level in the 2016-OND forecast bust.')
+    return fg
+
+
+def plot_figure_23(path=work_chaim):
+    fg = plot_figure_response_predict_maps(time=2009, species='H2O',
+                                           field='response',
+                                           time_mean='season', save=True)
+    print('Caption: ')
+    print('Seasonal water vapor anomalies predictor response maps for the 82.54 hPa level in 2009')
+    return fg
+
+
+def plot_figure_24(path=work_chaim):
+    fg = plot_figure_response_predict_maps(time=2010, species='H2O',
+                                           field='response',
+                                           time_mean='season', save=True)
+    print('Caption: ')
+    print('Seasonal water vapor anomalies predictor response maps for the 82.54 hPa level in 2010')
+    return fg
+
+
+def plot_figure_25(path=work_chaim):
+    fg = plot_figure_response_predict_maps(time=2009, species='t',
+                                           field='response',
+                                           time_mean='season', save=True)
+    print('Caption: ')
+    print('Seasonal air temperature anomalies predictor response maps for the 85 hPa level in 2009')
+    return fg
+
+
+def plot_figure_26(path=work_chaim):
+    fg = plot_figure_response_predict_maps(time=2010, species='t',
+                                           field='response',
+                                           time_mean='season', save=True)
+    print('Caption: ')
+    print('Seasonal air temperature anomalies predictor response maps for the 85 hPa level in 2010')
+    return fg
+
+
+def plot_figure_27(path=work_chaim):
+    fg = plot_figure_response_predict_maps(time=2009, species='u',
+                                           field='response',
+                                           time_mean='season', save=True)
+    print('Caption: ')
+    print('Seasonal zonal wind anomalies predictor response maps for the 85 hPa level in 2009')
+    return fg
+
+
+def plot_figure_28(path=work_chaim):
+    fg = plot_figure_response_predict_maps(time=2010, species='u',
+                                           field='response',
+                                           time_mean='season', save=True)
+    print('Caption: ')
+    print('Seasonal zonal wind anomalies predictor response maps for the 85 hPa level in 2010')
     return fg
