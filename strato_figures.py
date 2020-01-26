@@ -677,16 +677,25 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
     else:
         size = rds.time.size
     if size == 4:
-        figsize = (15, 10)
-        s_adjust = {'bottom': 0.08, 'top': 0.98, 'left': 0.03, 'right': 0.97,
-                    'hspace': 0.0, 'wspace': 0.15}
-        rect = [0.1, 0.057, 0.8, 0.01]
+        figsize = (15, 7)
+        s_adjust = dict(
+            top=0.955,
+            bottom=0.115,
+            left=0.03,
+            right=0.97,
+            hspace=0.08,
+            wspace=0.15)
+        rect = [0.1, 0.06, 0.8, 0.01]
         i_label = 9
     elif size == 3:
-        figsize = (15, 6)   # bottom=0.2, top=0.9, left=0.05
-        s_adjust = {'bottom': 0.15, 'top': 0.97, 'left': 0.04, 'right': 0.97,
-                    'hspace': 0.03, 'wspace': 0.18}
-        rect = [0.1, 0.1, 0.8, 0.015]
+        figsize = (15, 5.5)   # bottom=0.2, top=0.9, left=0.05
+        s_adjust = dict(top=0.945,
+                        bottom=0.125,
+                        left=0.04,
+                        right=0.97,
+                        hspace=0.03,
+                        wspace=0.18)
+        rect = [0.1, 0.06, 0.8, 0.015]
         i_label = 6
     proj = getattr(ccrs, proj_key)(central_longitude=0.0)
     if time_mean is not None:
