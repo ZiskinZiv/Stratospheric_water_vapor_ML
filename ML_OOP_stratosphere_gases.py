@@ -30,6 +30,7 @@ class Parameters:
                  poly_features=None,
                  special_run=None,
                  reg_time_shift=None,
+                 add_poly_reg=None,
                  data_name='swoosh',
                  species='h2o',
                  time_period=['1994', '2018'],
@@ -51,6 +52,7 @@ class Parameters:
 #        self.reg_add_sub = reg_add_sub
         self.regressors = regressors
         self.special_run = special_run
+        self.add_poly_reg = add_poly_reg
 #        self.regressors_file = regressors_file
 #        self.sw_field_list = ['combinedanomfillanom', 'combinedanomfill',
 #                              'combinedanom', 'combinedeqfillanom',
@@ -397,7 +399,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=['1994', '2018'], cv=None,
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
-           reg_time_shift=None, season=None,
+           reg_time_shift=None, season=None, add_poly_reg=None,
            special_run=None, gridsearch=False,
            lat_slice=[-60, 60], swoosh_latlon=False,
            original_data_file='swoosh_latpress-2.5deg.nc'):
@@ -407,7 +409,8 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     the special run
     reg_time_shift = {'radio_cold_no_qbo':[1,36]} - get the 36 lags of the regressor
     example special_run={'optimize_time_shift':(-12,12)}
-    use optimize_time_shift with area_mean=True"""
+    use optimize_time_shift with area_mean=True,
+    add_poly_reg = {'anom_nino3p4': 2} : adds enso^2 to regressors"""
     def parse_cv(cv):
         from sklearn.model_selection import KFold
         from sklearn.model_selection import RepeatedKFold
@@ -756,6 +759,7 @@ def pre_proccess(params, verbose=True):
     time_period = params.time_period
     area_mean = params.area_mean
     path = params.work_path
+    add_poly_reg = params.add_poly_reg
     # dict of {regressors: [1, 36]}
     reg_time_shift = params.reg_time_shift
     # load all of the regressors:
@@ -777,7 +781,7 @@ def pre_proccess(params, verbose=True):
     # anomlizing them:
     for reg in regressors.data_vars.keys():
         if reg == 'ch4':
-            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5, verbose=verbose)
+            regressors[reg] = aux.normalize_xr(regressors[reg], norm=1, verbose=verbose)
         elif reg == 'radio_cold' or reg == 'radio_cold_no_qbo':
             regressors[reg] = aux.deseason_xr(regressors[reg], how='mean', verbose=verbose)
 #        elif 'qbo_' in reg:
@@ -789,8 +793,18 @@ def pre_proccess(params, verbose=True):
             regressors[reg] = aux.deseason_xr(regressors[reg], how='mean', verbose=verbose)
 #        elif 'vol' in reg:
 #            regressors[reg] = aux.normalize_xr(regressors[reg], norm=5)
-    # normalize all regressors to -1 to 1:
-    regressors = aux.normalize_xr(regressors, norm=5, verbose=verbose)
+    # standartize all regressors (-avg)/std:
+    regressors = aux.normalize_xr(regressors, norm=1, verbose=verbose)
+    # add polynomials to chosen regs:
+    if add_poly_reg is not None:
+        for reg, n in add_poly_reg.items():
+            if reg not in regressors.data_vars:
+                raise('{} not in {}'.format(reg, regressors.data_vars))
+            poly_reg = poly_regressor(regressors[reg], n=n, plot=False)
+            regressors[poly_reg.name] = poly_reg
+            # remove the original regressor:
+            to_keep = [x for x in regressors.data_vars if x != reg]
+            regressors = regressors[to_keep]
     # regressing one out of the other if neccesary:
     # just did it by specifically regressed out and saved as _index.nc'
     # making lags of some of the regressors (e.g, cold point):
@@ -1223,6 +1237,21 @@ def correlate_da_with_lag(return_max=None, return_argmax=None,
     if return_argmax is not None:
         return corr_da_argmax
     return corr_da
+
+
+def poly_regressor(da, time_dim='time', n=2, plot=False):
+    """takes a regressor in DataArray and calculate its polynomial at a
+    degree n. if even n, restores the negative sign"""
+    negative_time = da[time_dim].where(da < 0, drop=True)
+    da_poly = da ** n
+    if (n % 2) == 0:
+        da_poly.loc[{time_dim: negative_time}] = - da_poly.loc[{time_dim: negative_time}]
+    da_poly.name = '{}^{}'.format(da.name, n)
+    da_poly.attrs = da.attrs
+    if plot:
+        da.plot()
+        da_poly.plot()
+    return da_poly
 
 
 class Plot_type:
