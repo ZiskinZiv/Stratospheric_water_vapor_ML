@@ -311,7 +311,6 @@ def produce_figures(fg):
 def run_grid_multi(reg_stacked, da_stacked, params):
     """run one grid_search_cv on a multioutputregressors(model)"""
     import xarray as xr
-    from aux_functions_strat import xr_order
     params.grid_search.fit(reg_stacked, da_stacked)
     rds = xr.Dataset()
     rds['cv_results'] = process_gridsearch_results(params.grid_search)
@@ -331,6 +330,7 @@ def run_grid_multi(reg_stacked, da_stacked, params):
 def process_gridsearch_results(GridSearchCV):
     import xarray as xr
     import pandas as pd
+    # TODO : refactor this!
     """takes GridSreachCV object with cv_results and xarray it into dataarray"""
     params = GridSearchCV.param_grid
     scoring = GridSearchCV.scoring
@@ -339,9 +339,11 @@ def process_gridsearch_results(GridSearchCV):
         # unpack param_grid vals to list of lists:
         pro = [[y for y in x] for x in params.values()]
         ind = pd.MultiIndex.from_product((pro), names=names)
-        result_names = [x for x in GridSearchCV.cv_results_.keys() if 'split'
-                        not in x and 'time' not in x and 'param' not in x and
-                        'rank' not in x]
+#        result_names = [x for x in GridSearchCV.cv_results_.keys() if 'split'
+#                        not in x and 'time' not in x and 'param' not in x and
+#                        'rank' not in x]
+        result_names = [
+            x for x in GridSearchCV.cv_results_.keys() if 'param' not in x]
         ds = xr.Dataset()
         for da_name in result_names:
             da = xr.DataArray(GridSearchCV.cv_results_[da_name])
@@ -353,53 +355,126 @@ def process_gridsearch_results(GridSearchCV):
                         'rank' not in x]
         ds = xr.Dataset()
         for da_name in result_names:
-            da = xr.DataArray(GridSearchCV.cv_results_[da_name], dims={**params})
+            da = xr.DataArray(GridSearchCV.cv_results_[
+                              da_name], dims={**params})
             ds[da_name] = da
         for k, v in params.items():
             ds[k] = v
-    name = [x for x in ds.data_vars.keys() if 'mean_test' in x]
-    mean_test = xr.concat(ds[name].data_vars.values(), dim='scoring')
-    mean_test.name = 'mean_test'
-    name = [x for x in ds.data_vars.keys() if 'mean_train' in x]
-    mean_train = xr.concat(ds[name].data_vars.values(), dim='scoring')
-    mean_train.name = 'mean_train'
-    name = [x for x in ds.data_vars.keys() if 'std_test' in x]
-    std_test = xr.concat(ds[name].data_vars.values(), dim='scoring')
-    std_test.name = 'std_test'
-    name = [x for x in ds.data_vars.keys() if 'std_train' in x]
-    std_train = xr.concat(ds[name].data_vars.values(), dim='scoring')
-    std_train.name = 'std_train'
-    ds = ds.drop(ds.data_vars.keys())
-    ds['mean_test'] = mean_test
-    ds['mean_train'] = mean_train
-    ds['std_test'] = std_test
-    ds['std_train'] = std_train
-    mean_test_train = xr.concat(ds[['mean_train', 'mean_test']].data_vars.
-                                values(), dim='train_test')
-    std_test_train = xr.concat(ds[['std_train', 'std_test']].data_vars.
-                               values(), dim='train_test')
-    ds['train_test'] = ['train', 'test']
-    ds = ds.drop(ds.data_vars.keys())
-    ds['MEAN'] = mean_test_train
-    ds['STD'] = std_test_train
-    # CV = xr.Dataset(coords=GridSearchCV.param_grid)
-    ds = xr.concat(ds[['MEAN', 'STD']].data_vars.values(), dim='MEAN_STD')
-    ds['MEAN_STD'] = ['MEAN', 'STD']
-    ds.name = 'CV_results'
+    # get all splits data and concat them along number of splits:
+    all_splits = [x for x in ds.data_vars if 'split' in x]
+    train_splits = [x for x in all_splits if 'train' in x]
+    test_splits = [x for x in all_splits if 'test' in x]
+    splits = [x for x in range(len(train_splits))]
+    train_splits = xr.concat([ds[x] for x in train_splits], 'split')
+    test_splits = xr.concat([ds[x] for x in test_splits], 'split')
+    # replace splits data vars with newly dataarrays:
+    ds = ds[[x for x in ds.data_vars if x not in all_splits]]
+    ds['split_train_score'] = train_splits
+    ds['split_test_score'] = test_splits
+    ds['split'] = splits
+
+#    name = [x for x in ds.data_vars.keys() if 'mean_test' in x]
+#    # if scoring:
+#    mean_test = xr.concat(ds[name].data_vars.values(), dim='scoring')
+#    mean_test.name = 'mean_test'
+#    name = [x for x in ds.data_vars.keys() if 'mean_train' in x]
+#    mean_train = xr.concat(ds[name].data_vars.values(), dim='scoring')
+#    mean_train.name = 'mean_train'
+#    name = [x for x in ds.data_vars.keys() if 'std_test' in x]
+#    std_test = xr.concat(ds[name].data_vars.values(), dim='scoring')
+#    std_test.name = 'std_test'
+#    name = [x for x in ds.data_vars.keys() if 'std_train' in x]
+#    std_train = xr.concat(ds[name].data_vars.values(), dim='scoring')
+#    std_train.name = 'std_train'
+#    # ds = ds.drop(ds.data_vars.keys())
+#    ds['mean_test'] = mean_test
+#    ds['mean_train'] = mean_train
+#    ds['std_test'] = std_test
+#    ds['std_train'] = std_train
+#    mean_test_train = xr.concat(ds[['mean_train', 'mean_test']].data_vars.
+#                                values(), dim='train_test')
+#    std_test_train = xr.concat(ds[['std_train', 'std_test']].data_vars.
+#                               values(), dim='train_test')
+#    ds['train_test'] = ['train', 'test']
+#    # ds = ds.drop(ds.data_vars.keys())
+#    ds['MEAN'] = mean_test_train
+#    ds['STD'] = std_test_train
+#    # CV = xr.Dataset(coords=GridSearchCV.param_grid)
+#    ds = xr.concat(ds[['MEAN', 'STD']].data_vars.values(), dim='MEAN_STD')
+#    ds['MEAN_STD'] = ['MEAN', 'STD']
+    ds.attrs['name'] = 'CV_results'
     ds.attrs['param_names'] = names
     if isinstance(scoring, str):
         ds.attrs['scoring'] = scoring
-        ds = ds.reset_coords(drop=True)
-    else:
-        ds['scoring'] = scoring
+        # ds = ds.reset_coords(drop=True)
+#    else:
+#        ds['scoring'] = scoring
+    if GridSearchCV.refit:
+        ds['best_score'] = GridSearchCV.best_score_
+        ds['best_model'] = GridSearchCV.best_estimator_
+        for name in names:
+            ds['best_{}'.format(name)] = GridSearchCV.best_params_[name]
     return ds
+
+
+def run_model_with_shifted_plevels(model, X, y, p, lms=None):
+    import xarray as xr
+    from aux_functions_strat import text_blue
+    from sklearn.multioutput import MultiOutputRegressor
+    from sklearn.model_selection import GridSearchCV
+    if lms is None:
+        print('NO level month shift dataarray found: running model.fit(X, y) without shifted plevels')
+        return model.fit(X, y)
+    print(model.estimator)
+    level_month_shift = lms
+    regs = [x for x in level_month_shift.reg_shifted.values]
+    print('Running with special mode: run_with_shifted_plevels,' +
+          ' with regressors shifts per level: {}'.format(regs))
+#        for reg in regs:
+    level_results = []
+    lms = level_month_shift
+    for lev in lms.level.values:
+        level_shift = lms.sel(level=lev, method='nearest').values
+        shift_dict = dict(zip(regs, level_shift))
+        Xcopy = reg_shift(X, shift_dict)
+        p.plevels = lev
+        _, y = pre_proccess(p, verbose=False)
+        y_shifted = y.sel(time=Xcopy.time)
+#            print('shifting target data {} months'.format(str(shift)))
+#            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
+#                  y_shifted.time.size))
+        if isinstance(model, MultiOutputRegressor):
+            model.fit(Xcopy, y_shifted)
+            level_results.append([x.results_ for x in model.estimators_])
+        elif isinstance(model, GridSearchCV):
+            model.fit(Xcopy, y_shifted)
+            cv_ds = process_gridsearch_results(model)
+            level_results.append(cv_ds)
+        else:
+            model.fit(Xcopy, y_shifted, verbose=False)
+            level_results.append(model.results_)
+    rds = xr.concat(level_results, dim='level')
+    print(text_blue('Done!'))
+    if isinstance(model, GridSearchCV):
+        rds['level'] = lms.level
+        rds.attrs['reg_shifted'] = regs
+        return rds
+    # rds = xr.concat(reg_results, dim='reg_shifted')
+    rds['reg_shifted'] = regs
+    rds['level_month_shift'] = level_month_shift
+    if isinstance(model, MultiOutputRegressor):
+        for est in model.estimators_:
+            est.results_ = rds
+    else:
+        model.results_ = rds
+    return model
 
 
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
            poly_features=None, time_period=['1994', '2018'], cv=None,
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
-           reg_time_shift=None, season=None, add_poly_reg=None,
+           reg_time_shift=None, season=None, add_poly_reg=None, lms=None,
            special_run=None, gridsearch=False,
            lat_slice=[-60, 60], swoosh_latlon=False,
            original_data_file='swoosh_latpress-2.5deg.nc'):
@@ -444,7 +519,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         arg_dict['swoosh_field'] = 'combinedanom'
         print('lat/lon run selected, (no fill product for lat/lon)')
     keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch',
-                      'swoosh_latlon']
+                      'swoosh_latlon', 'lms']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = Parameters(**arg_dict)
     # p.from_dict(arg_dict)
@@ -603,7 +678,8 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #            else:
             model.set_params(cv=cv)
             print(model.estimator_)
-            model.fit(X, y)
+            model  = run_model_with_shifted_plevels(model, X, y, p, lms=lms)
+            # model.fit(X, y)
     # next, just do cross-val with models without CV(e.g., LinearRegression):
         if not hasattr(ml_model, 'cv') and not RI_proc:
             from sklearn.multioutput import MultiOutputRegressor
@@ -613,15 +689,18 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             if gridsearch:
                 from sklearn.model_selection import GridSearchCV
                 gr = GridSearchCV(ml_model, p.param_grid, cv=cv,
-                                  return_train_score=True, verbose=1)
-                mul = (MultiOutputRegressor(gr, n_jobs=1))
-                print(mul)
-                mul.fit(X, y)
-                return mul
+                                  return_train_score=True, refit=True,
+                                  scoring='r2', verbose=1)
+                # mul = (MultiOutputRegressor(gr, n_jobs=1))
+                print(gr)
+                cvr = run_model_with_shifted_plevels(gr, X, y, p, lms=lms)
+                # mul.fit(X, y)
+                return cvr
             mt_dim = [x for x in y.dims if x != model.sample_dim][0]
             mul = (MultiOutputRegressor(model.estimator))
             print(mul)
-            mul.fit(X, y)
+            mul = run_model_with_shifted_plevels(mul, X, y, p, lms=lms)
+            # mul.fit(X, y)
             cv_results = [cross_validate(mul.estimators_[i], X,
                                          y.isel({mt_dim: i}),
                                          cv=cv, scoring='r2',
@@ -630,10 +709,11 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             cds = proc_cv_results(cv_results, y, model.sample_dim)
             return cds
     elif RI_proc:
-        model.make_RI(X, y)
+        model.make_RI(X, y, p, lms)
     else:
         print(model.estimator)
-        model.fit(X, y)
+        model  = run_model_with_shifted_plevels(model, X, y, p, lms=lms)
+        # model.fit(X, y)
     # append parameters to model class:
     model.run_parameters_ = p
     return model
@@ -1283,6 +1363,9 @@ class Plot_type:
         elif plot_field == 'r2':
             self.field = ['r2_adj']
             self.plot_type = 'error'
+        elif plot_field == 'RI':
+            self.field = ['RI']
+            self.plot_type = 'feature'
         elif plot_field == 'params':
             self.field = ['params']
             self.plot_type = 'feature'
@@ -1481,6 +1564,14 @@ class Plot_type:
         print(text_green('  lat-time: '), 'a latitude vs. time plot.')
         print(text_green('  lon-time: '), 'a longitude vs. time plot.')
         print(text_green('  map: '), 'a longitude vs. latitude plot.')
+        print(text_blue('RI: '), 'relative impact with geo-keys:')
+        print(text_green('  level-lat: '),
+              'a pressure level vs. latitude plot of each regressor.')
+        print(text_green('  level-lon: '),
+              'a pressure level vs. longitude plot of each regressor.')
+        print(
+            text_green('  map: '),
+            'a longitude vs. latitude plot of each regressor.')
         print(text_blue('params: '), 'beta coeffs with geo-keys:')
         print(text_green('  level-lat: '),
               'a pressure level vs. latitude plot of each regressor.')
@@ -1702,12 +1793,17 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
                 plt.show()
                 return fg
-        elif key == 'params':
-            plt_kwargs.update({'cmap': 'bwr', 'figsize': (15, 10),
+        elif key == 'params' or key == 'RI':
+            cmaps = {'params': 'bwr', 'RI': 'viridis'}
+            plt_kwargs.update({'cmap': cmaps.get(key), 'figsize': (15, 10),
                                'add_colorbar': False,
                                'extend': 'both'})
-            plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
-            label_add = r'$\beta$ coefficients'
+            if key == 'params':
+                plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+                label_add = r'$\beta$ coefficients'
+            elif key == 'RI':
+                plt_kwargs.update({'vmin': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+                label_add = 'Relative impact'
             if data.regressors.size > 5:
                 plt_kwargs.update(col_wrap = 4)
             else:
@@ -2389,7 +2485,7 @@ class ImprovedRegressor(RegressorWrapper):
         print('saved results to {}.'.format(path_like))
         return
 
-    def make_RI(self, X, y):
+    def make_RI(self, X, y, p, lms=None):
         """ make Relative Impact score for estimator into xarray"""
         import aux_functions_strat as aux
         import warnings
@@ -2406,7 +2502,8 @@ class ImprovedRegressor(RegressorWrapper):
             keys = regressors_list[i].attrs['median']
             new_X = regressors_list[i].to_array(dim=feature_dim)
             new_X = aux.xr_order(new_X)
-            self.fit(new_X, y)
+            self = run_model_with_shifted_plevels(self, new_X, y, p, lms)
+            # self.fit(new_X, y)
             res_dict[keys] = self.results_
 #            elif mode == 'model_all':
 #                params, res_dict[keys] = run_model_for_all(new_X, y, params)
