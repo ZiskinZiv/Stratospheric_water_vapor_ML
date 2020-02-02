@@ -599,10 +599,10 @@ def deseason_xr(data, how='std', month='all', season=None, clim=False,
     attrs = data.attrs
     field_name = data.name
     # first compute the monthly and seasonaly long term mean and std:
-    month_mean = data.groupby(tdim + '.month').mean(tdim)
-    month_std = data.groupby(tdim + '.month').std(tdim)
-    season_mean = data.groupby(tdim + '.season').mean(tdim)
-    season_std = data.groupby(tdim + '.season').std(tdim)
+    month_mean = data.groupby(tdim + '.month').mean(tdim, keep_attrs=True)
+    month_std = data.groupby(tdim + '.month').std(tdim, keep_attrs=True)
+    season_mean = data.groupby(tdim + '.season').mean(tdim, keep_attrs=True)
+    season_std = data.groupby(tdim + '.season').std(tdim, keep_attrs=True)
     if (month == 'all') and (season == 'all'):
         return print('month and season cant be both all, pick one..')
     # first do all data (all months):
@@ -684,6 +684,10 @@ def normalize_xr(data, norm=1, down_bound=-1., upper_bound=1., verbose=True):
     attrs = data.attrs
     avg = data.mean('time', keep_attrs=True)
     sd = data.std('time', keep_attrs=True)
+    try:
+        data_name = data.name
+    except AttributeError:
+        data_name = ''
     if norm == 0:
         data = data
         norm_str = 'No'
@@ -707,12 +711,12 @@ def normalize_xr(data, norm=1, down_bound=-1., upper_bound=1., verbose=True):
         norm_str = 'mapped between ' + str(down_bound) + ' and ' + str(upper_bound)
         # print data
         if verbose:
-            print('Data is ' + norm_str)
+            print('Data is {} on {}'.format(norm_str, data_name))
     elif norm == 6:
         data = data-avg
         norm_str = 'data-avg'
     if verbose and norm != 5:
-            print('Preforming ' + norm_str + ' Normalization')
+        print('Preforming {} Normalization on {}'.format(norm_str, data_name))
     data.attrs = attrs
     data.attrs['Normalize'] = norm_str
     return data
