@@ -214,6 +214,19 @@ class ML_Switcher(object):
 #        return self.model
 
 
+def level_month_shift_run(plags=['qbo_cdas'],
+                          lslice=[-20, 20],
+                          time_period=['1984', '2018'], lag_period=[0, 12]):
+    print('producing level month shift for {} regressors'.format(plags))
+    print('time period: {} to {}'.format(*time_period))
+    print('latitude boundries: {} to {}'.format(*lslice))
+    print('month lags allowed: {} to {}'.format(*lag_period))
+    rds = run_ML(time_period=time_period, area_mean=True,
+                 lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
+                 regressors=plags)
+    return rds.level_month_shift
+
+
 def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                                    'qbo_cdas', 'anom_nino3p4', 'ch4'],
                                     savepath=None, latlon=False):
@@ -327,6 +340,24 @@ def run_grid_multi(reg_stacked, da_stacked, params):
     return params, rds
 
 
+def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
+    splits = cvr.split.size
+    param_names = cvr.attrs['param_names']
+    # if not isinstance(level, list):
+    #     level = int(level)
+    cvr_level = cvr.sel(level=level, method='nearest')
+        
+    # elif isinstance(level, list) and len(level) == 2:
+        # cvr_level = cvr.sel(level=slice(level[0], level[1]))
+    # else:
+    #     raise('level should be either a len(2) list or int')
+    if len(param_names) == 2:
+        tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
+        fg = tt.plot.pcolormesh(vmin=0.0, levels=21, col='task')
+        fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
+    return cvr_level
+
+    
 def process_gridsearch_results(GridSearchCV):
     import xarray as xr
     import pandas as pd
@@ -417,8 +448,9 @@ def process_gridsearch_results(GridSearchCV):
     return ds
 
 
-def run_model_with_shifted_plevels(model, X, y, p, lms=None):
+def run_model_with_shifted_plevels(model, X, y, p, plevel=None, lms=None):
     import xarray as xr
+    import numpy as np
     from aux_functions_strat import text_blue
     from sklearn.multioutput import MultiOutputRegressor
     from sklearn.model_selection import GridSearchCV
@@ -433,7 +465,13 @@ def run_model_with_shifted_plevels(model, X, y, p, lms=None):
 #        for reg in regs:
     level_results = []
     lms = level_month_shift
-    for lev in lms.level.values:
+    if plevel is None:
+        levels = lms.level.values
+    elif isinstance(plevel, list) and len(plevel) == 2:
+        levels = lms.sel(level=slice(plevel[0], plevel[1])).level.values
+    else:
+        levels = np.expand_dims(lms.sel(level=plevel, method='nearest').level.values, axis=0)
+    for lev in levels:
         level_shift = lms.sel(level=lev, method='nearest').values
         shift_dict = dict(zip(regs, level_shift))
         Xcopy = reg_shift(X, shift_dict)
@@ -456,7 +494,7 @@ def run_model_with_shifted_plevels(model, X, y, p, lms=None):
     rds = xr.concat(level_results, dim='level')
     print(text_blue('Done!'))
     if isinstance(model, GridSearchCV):
-        rds['level'] = lms.level
+        rds['level'] = levels
         rds.attrs['reg_shifted'] = regs
         return rds
     # rds = xr.concat(reg_results, dim='reg_shifted')
@@ -475,7 +513,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            poly_features=None, time_period=['1994', '2018'], cv=None,
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
            reg_time_shift=None, season=None, add_poly_reg=None, lms=None,
-           special_run=None, gridsearch=False,
+           special_run=None, gridsearch=False, plevels=None,
            lat_slice=[-60, 60], swoosh_latlon=False,
            original_data_file='swoosh_latpress-2.5deg.nc'):
     """Run ML model with...
@@ -531,6 +569,10 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 
     print('Running with regressors: ', ', '.join([x for x in
                                                   X.regressors.values]))
+    if plevels is None:
+        print('Running with all pressure levels.')
+    else:
+        print('Running with {} pressure levels.'.format(plevels))
     # wrap ML_model:
     model = ImprovedRegressor(ml_model, reshapes='regressors',
                               sample_dim='time')
@@ -678,7 +720,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #            else:
             model.set_params(cv=cv)
             print(model.estimator_)
-            model  = run_model_with_shifted_plevels(model, X, y, p, lms=lms)
+            model  = run_model_with_shifted_plevels(model, X, y, p, plevel=plevels, lms=lms)
             # model.fit(X, y)
     # next, just do cross-val with models without CV(e.g., LinearRegression):
         if not hasattr(ml_model, 'cv') and not RI_proc:
@@ -693,13 +735,13 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
                                   scoring='r2', verbose=1)
                 # mul = (MultiOutputRegressor(gr, n_jobs=1))
                 print(gr)
-                cvr = run_model_with_shifted_plevels(gr, X, y, p, lms=lms)
+                cvr = run_model_with_shifted_plevels(gr, X, y, p, plevel=plevels, lms=lms)
                 # mul.fit(X, y)
                 return cvr
             mt_dim = [x for x in y.dims if x != model.sample_dim][0]
             mul = (MultiOutputRegressor(model.estimator))
             print(mul)
-            mul = run_model_with_shifted_plevels(mul, X, y, p, lms=lms)
+            mul = run_model_with_shifted_plevels(mul, X, y, p, plevel=plevels, lms=lms)
             # mul.fit(X, y)
             cv_results = [cross_validate(mul.estimators_[i], X,
                                          y.isel({mt_dim: i}),
@@ -709,10 +751,10 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             cds = proc_cv_results(cv_results, y, model.sample_dim)
             return cds
     elif RI_proc:
-        model.make_RI(X, y, p, lms)
+        model.make_RI(X, y, p, plevels=plevels, lms=lms)
     else:
         print(model.estimator)
-        model  = run_model_with_shifted_plevels(model, X, y, p, lms=lms)
+        model  = run_model_with_shifted_plevels(model, X, y, p, plevel=plevels, lms=lms)
         # model.fit(X, y)
     # append parameters to model class:
     model.run_parameters_ = p
@@ -2485,7 +2527,7 @@ class ImprovedRegressor(RegressorWrapper):
         print('saved results to {}.'.format(path_like))
         return
 
-    def make_RI(self, X, y, p, lms=None):
+    def make_RI(self, X, y, p, plevels=None, lms=None):
         """ make Relative Impact score for estimator into xarray"""
         import aux_functions_strat as aux
         import warnings
@@ -2502,7 +2544,7 @@ class ImprovedRegressor(RegressorWrapper):
             keys = regressors_list[i].attrs['median']
             new_X = regressors_list[i].to_array(dim=feature_dim)
             new_X = aux.xr_order(new_X)
-            self = run_model_with_shifted_plevels(self, new_X, y, p, lms)
+            self = run_model_with_shifted_plevels(self, new_X, y, p, plevel=plevels, lms=lms)
             # self.fit(new_X, y)
             res_dict[keys] = self.results_
 #            elif mode == 'model_all':
