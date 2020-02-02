@@ -97,14 +97,14 @@ class Parameters:
         from make_regressors import load_all_regressors
         return load_all_regressors()
 
-    def select_model(self, model_name=None, ml_params=None, gridsearch=False):
+    def select_model(self, model_name=None, ml_params=None):
         # pick ml model from ML_models class dict:
         ml = ML_Switcher()
         if model_name is not None:
             ml_model = ml.pick_model(model_name)
             self.model_name = model_name
         else:
-            ml_model = ml.pick_model(self.model_name, gridsearch)
+            ml_model = ml.pick_model(self.model_name)
         # set external parameters if i want:
         if ml_params is not None:
             ml_model.set_params(**ml_params)
@@ -229,7 +229,7 @@ def level_month_shift_run(plags=['qbo_cdas'],
 
 def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                                    'qbo_cdas', 'anom_nino3p4', 'ch4'],
-                                    savepath=None, latlon=False):
+                                   savepath=None, latlon=False):
     """data for fig 7"""
     import xarray as xr
     seasons = ['JJA', 'SON', 'DJF', 'MAM']
@@ -252,9 +252,8 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                 '2018'],
             regressors=regressors,
             season=season,
-            special_run={
-                'run_with_shifted_plevels': lms}, swoosh_latlon=latlon,
-                    lat_slice=[-60, 60])
+            lms=lms, swoosh_latlon=latlon, RI_proc=True,
+            lat_slice=[-60, 60])
         ds_list.append(rds.results_)
     to_concat_vars = [x for x in ds_list[0].keys(
             ) if 'time' not in ds_list[0][x].dims]
@@ -340,7 +339,53 @@ def run_grid_multi(reg_stacked, da_stacked, params):
     return params, rds
 
 
+def save_cv_results(cvr, ml_param_add=None, savepath=work_chaim):
+    import pandas as pd
+    # run linear kernel with alpha opt
+    # run poly kernel with degrees: 1 to 3 and optimize gamma, alpha, with fixed coef0
+    # run rbf, sigmoid, laplacian with gamma, alpha opt.
+    # save for each kernel, then run_ML with these parameters, latlon H2O
+    if 'lon' in cvr.attrs and len(cvr.attrs['lon']) > 1:
+        geo = 'latlon'
+    else:
+        geo = 'latpress'
+    name = cvr.attrs['model_name']
+    params = cvr.attrs['param_names']
+    species = cvr.attrs['species']
+    time = cvr.attrs['time']
+    max_year = pd.to_datetime(max(time)).year
+    min_year = pd.to_datetime(min(time)).year
+    regs = cvr.attrs['regressors']
+    cvr_to_save = cvr[[x for x in cvr.data_vars if 'best_model' not in x]]
+    cvr_to_save.attrs.pop('time')
+    # shifted = cvr.attrs['reg_shifted']
+    if ml_param_add is not None:
+        filename = 'CVR_{}_{}_{}_{}_{}_{}_{}-{}.nc'.format(
+            name,
+            ml_param_add,
+            '_'.join(params),
+            species, geo,
+            '_'.join(regs),
+            min_year,
+            max_year)
+    else:
+        filename = 'CVR_{}_{}_{}_{}_{}_{}-{}.nc'.format(
+            name,
+            '_'.join(params),
+            species, geo,
+            '_'.join(regs),
+            min_year,
+            max_year)
+    comp = dict(zlib=True, complevel=9)  # best compression
+    encoding = {var: comp for var in cvr_to_save.data_vars}
+    cvr_to_save.to_netcdf(savepath / filename, 'w', encoding=encoding)
+    print('saved results to {}.'.format(savepath/filename))
+    return
+
+
 def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
+    # TODO: need to fix plot
+    log_scale_params = ['gamma', 'alpha']
     splits = cvr.split.size
     param_names = cvr.attrs['param_names']
     # if not isinstance(level, list):
@@ -353,7 +398,7 @@ def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
     #     raise('level should be either a len(2) list or int')
     if len(param_names) == 2:
         tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
-        fg = tt.plot.pcolormesh(vmin=0.0, levels=21, col='task')
+        fg = tt.plot.contourf(vmin=0.0, levels=21, col='task', xscale='log', yscale='log')
         fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
     return cvr_level
 
@@ -366,31 +411,20 @@ def process_gridsearch_results(GridSearchCV):
     params = GridSearchCV.param_grid
     scoring = GridSearchCV.scoring
     names = [x for x in params.keys()]
-    if len(params) > 1:
-        # unpack param_grid vals to list of lists:
-        pro = [[y for y in x] for x in params.values()]
-        ind = pd.MultiIndex.from_product((pro), names=names)
+
+    # unpack param_grid vals to list of lists:
+    pro = [[y for y in x] for x in params.values()]
+    ind = pd.MultiIndex.from_product((pro), names=names)
 #        result_names = [x for x in GridSearchCV.cv_results_.keys() if 'split'
 #                        not in x and 'time' not in x and 'param' not in x and
 #                        'rank' not in x]
-        result_names = [
-            x for x in GridSearchCV.cv_results_.keys() if 'param' not in x]
-        ds = xr.Dataset()
-        for da_name in result_names:
-            da = xr.DataArray(GridSearchCV.cv_results_[da_name])
-            ds[da_name] = da
-        ds = ds.assign(dim_0=ind).unstack('dim_0')
-    elif len(params) == 1:
-        result_names = [x for x in GridSearchCV.cv_results_.keys() if 'split'
-                        not in x and 'time' not in x and 'param' not in x and
-                        'rank' not in x]
-        ds = xr.Dataset()
-        for da_name in result_names:
-            da = xr.DataArray(GridSearchCV.cv_results_[
-                              da_name], dims={**params})
-            ds[da_name] = da
-        for k, v in params.items():
-            ds[k] = v
+    result_names = [
+        x for x in GridSearchCV.cv_results_.keys() if 'param' not in x]
+    ds = xr.Dataset()
+    for da_name in result_names:
+        da = xr.DataArray(GridSearchCV.cv_results_[da_name])
+        ds[da_name] = da
+    ds = ds.assign(dim_0=ind).unstack('dim_0')
     # get all splits data and concat them along number of splits:
     all_splits = [x for x in ds.data_vars if 'split' in x]
     train_splits = [x for x in all_splits if 'train' in x]
@@ -460,7 +494,7 @@ def run_model_with_shifted_plevels(model, X, y, p, plevel=None, lms=None):
     print(model.estimator)
     level_month_shift = lms
     regs = [x for x in level_month_shift.reg_shifted.values]
-    print('Running with special mode: run_with_shifted_plevels,' +
+    print('Running with shifted plevels,' +
           ' with regressors shifts per level: {}'.format(regs))
 #        for reg in regs:
     level_results = []
@@ -495,6 +529,17 @@ def run_model_with_shifted_plevels(model, X, y, p, plevel=None, lms=None):
     print(text_blue('Done!'))
     if isinstance(model, GridSearchCV):
         rds['level'] = levels
+        rds.attrs['model_name'] = p.model_name
+        if 'H2O' in y.attrs['long_name']:
+            rds.attrs['species'] = 'H2O'
+        elif 'temperature' or 'Temperature' in y.attrs['long_name']:
+            rds.attrs['species'] = 't'
+        elif 'wind' or 'Wind' in y.attrs['long_name']:
+            rds.attrs['species'] = 'u'
+        y_coords = y.unstack('samples').coords
+        for coord, val in y_coords.items():
+            rds.attrs[coord] = val.values
+        rds.attrs['regressors'] = X.regressors.values
         rds.attrs['reg_shifted'] = regs
         return rds
     # rds = xr.concat(reg_results, dim='reg_shifted')
@@ -514,7 +559,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
            reg_time_shift=None, season=None, add_poly_reg=None, lms=None,
            special_run=None, gridsearch=False, plevels=None,
-           lat_slice=[-60, 60], swoosh_latlon=False,
+           lat_slice=[-60, 60], swoosh_latlon=False, param_grid=None,
            original_data_file='swoosh_latpress-2.5deg.nc'):
     """Run ML model with...
     regressors = None
@@ -557,7 +602,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         arg_dict['swoosh_field'] = 'combinedanom'
         print('lat/lon run selected, (no fill product for lat/lon)')
     keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch',
-                      'swoosh_latlon', 'lms']
+                      'swoosh_latlon', 'lms', 'param_grid']
     [arg_dict.pop(key) for key in keys_to_remove]
     p = Parameters(**arg_dict)
     # p.from_dict(arg_dict)
@@ -730,7 +775,9 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             # get multi-target dim:
             if gridsearch:
                 from sklearn.model_selection import GridSearchCV
-                gr = GridSearchCV(ml_model, p.param_grid, cv=cv,
+                if param_grid is None:
+                    param_grid = p.param_grid
+                gr = GridSearchCV(ml_model, param_grid, cv=cv,
                                   return_train_score=True, refit=True,
                                   scoring='r2', verbose=1)
                 # mul = (MultiOutputRegressor(gr, n_jobs=1))
