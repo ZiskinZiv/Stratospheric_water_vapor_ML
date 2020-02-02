@@ -459,7 +459,7 @@ def plot_figure_9(path=work_chaim):
 
 
 def plot_figure_10(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bdc-plags_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_t500_bdc_2004-2018.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lat', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -468,7 +468,7 @@ def plot_figure_10(path=work_chaim):
 
 
 def plot_figure_11(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso-plags_t500-plags_bdc-plags_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_t500_bdc_2004-2018.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lon', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
