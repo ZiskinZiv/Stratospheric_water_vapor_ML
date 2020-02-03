@@ -214,16 +214,26 @@ class ML_Switcher(object):
 #        return self.model
 
 
-def level_month_shift_run(plags=['qbo_cdas'],
+def run_level_month_shift(plags=['qbo_cdas'],
                           lslice=[-20, 20],
-                          time_period=['1984', '2018'], lag_period=[0, 12]):
+                          time_period=['1984', '2018'], lag_period=[0, 12],
+                          species=None):
     print('producing level month shift for {} regressors'.format(plags))
     print('time period: {} to {}'.format(*time_period))
     print('latitude boundries: {} to {}'.format(*lslice))
     print('month lags allowed: {} to {}'.format(*lag_period))
-    rds = run_ML(time_period=time_period, area_mean=True,
-                 lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
-                 regressors=plags)
+    if species is None:
+        rds = run_ML(time_period=time_period, area_mean=True,
+                     lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
+                     regressors=plags)
+    elif species == 't':
+        rds = run_ML(time_period=time_period, species='t', area_mean=True,
+                     lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
+                     regressors=plags, original_data_file='era5_t_85hPa.nc')
+    elif species == 'u':
+        rds = run_ML(time_period=time_period, species='u', area_mean=True,
+                     lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
+                     regressors=plags, original_data_file='era5_u_85hPa.nc')
     return rds.level_month_shift
 
 
