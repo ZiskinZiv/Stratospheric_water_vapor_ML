@@ -317,17 +317,45 @@ def produce_regressors_response_figs(X, results, level, time, grp='time.season')
     return fg
 
 
-def produce_figures(fg):
-    """input: fg xr.contourf(col=) (facetgrid object)"""
-    lags = np.arange(1, 37)
-    radio_regs = ['radio_cold_no_qbo_lag_' + str(x) for x in lags]
-    fg = rds.plot_like('pvalues', flist=radio_regs, fmax=True)
-    # change margins for packed facetgrids...
-    fg.fig.subplots_adjust(bottom=0.21, top=0.9, left=0.05, right=0.95)
-    # change small titles:
-    for i, ax in enumerate(fg.axes.flat):
-        ax.set_title('radio_cpt_lag_{}'.format(i + 1))
-    return
+def compare_RI(rds1, rds2, names=['rds1', 'rds2']):
+    """input: rds datasets"""
+    import matplotlib.pyplot as plt
+    import xarray as xr
+    import cartopy.crs as ccrs
+    fg = plot_like_results(rds1, plot_key='RI_map', level=82, cartopy=True)
+    rds1 = fg.data
+    plt.close()
+    fg = plot_like_results(rds2, plot_key='RI_map', level=82, cartopy=True)
+    rds2 = fg.data
+    plt.close()
+    rds = xr.concat([rds1, rds2], 'model')
+    rds['model'] = names
+    proj = ccrs.PlateCarree(central_longitude=0)
+    plt_kwargs = {'cmap': 'viridis', 'figsize': (15, 10),
+                  'add_colorbar': False, 'levels': 41,
+                  'extend': None, 'vmin': 0.0}
+    plt_kwargs.update({'subplot_kws': dict(projection=proj),
+                           'transform': ccrs.PlateCarree()})
+    label_add = 'Relative impact'
+    # plt_kwargs.update(kwargs)
+    label_add += ' at level= {:.2f} hPa'.format(82.54)
+    fg = rds.plot.contourf(col='regressors', row='model', **plt_kwargs)
+    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+    fg.add_colorbar(
+                cax=cbar_ax, orientation="horizontal", label='',
+                format='%0.3f')
+    fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+    [ax.coastlines() for ax in fg.axes.flatten()]
+    [ax.gridlines(
+        crs=ccrs.PlateCarree(),
+        linewidth=1,
+        color='black',
+        alpha=0.5,
+        linestyle='--',
+        draw_labels=False) for ax in fg.axes.flatten()]
+    fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+    plt.show()
+    return fg
 
 
 def run_grid_multi(reg_stacked, da_stacked, params):
@@ -416,7 +444,6 @@ def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
 def process_gridsearch_results(GridSearchCV):
     import xarray as xr
     import pandas as pd
-    # TODO : refactor this!
     """takes GridSreachCV object with cv_results and xarray it into dataarray"""
     params = GridSearchCV.param_grid
     scoring = GridSearchCV.scoring
