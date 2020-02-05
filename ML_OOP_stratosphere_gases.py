@@ -438,6 +438,10 @@ def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
         tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
         fg = tt.plot.contourf(vmin=0.0, levels=21, col='task', xscale='log', yscale='log')
         fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
+    elif len(param_names) == 3:
+        tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
+        fg = tt.plot.contourf(vmin=0.0, levels=21, row='degree',col='task', xscale='log', yscale='log')
+        fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
     return cvr_level
 
     
