@@ -227,7 +227,7 @@ def calc_cold_point_from_sounding(path=sound_path, times=['1993', '2017'],
 
 def siphon_igra2_to_xarray(station, path=sound_path,
                            fields=['temperature', 'pressure'],
-                           times=['1984-01-01', '2019-06-30'], derived=False):
+                           times=['1984-01-01', '2019-12-31'], derived=False):
     from siphon.simplewebservice.igra2 import IGRAUpperAir
     import pandas as pd
     import numpy as np
@@ -247,7 +247,7 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     logger.info('fields chosen are: {}'.format(fields))
     logger.info('dates chosen are: {}'.format(times))
     dates = pd.to_datetime(times)
-    dates = [x.date() for x in dates]
+    dates = [x.to_pydatetime() for x in dates]
     logger.info('getting {} from IGRA2...'.format(station))
     try:
         df, header = IGRAUpperAir.request_data(dates, station, derived=derived)
