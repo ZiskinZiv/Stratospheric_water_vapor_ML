@@ -275,11 +275,31 @@ def _download_CH4(filename='ch4_mm.nc', loadpath=None,
 #        ch4 = ch4_xr.trend
 #        print_saved_file('trend ch4_index.nc', savepath)
 #    else:
-    ch4 = ch4_xr.average
+    ch4 = ch4_xr.trend
     if savepath is not None:
         ch4.to_netcdf(savepath / 'ch4_index.nc', 'w')
         print_saved_file('ch4_index.nc', savepath)
     return ch4
+
+
+def _produce_CH4_jaxa(load_path, savepath=None):
+    import pandas as pd
+    """http://www.gosat.nies.go.jp/en/assets/whole-atmosphere-monthly-mean_ch4_dec2019.zip"""
+    df = pd.read_csv(
+        load_path /
+        '10x60.trend.method2.txt',
+        comment='#',
+        header=None, delim_whitespace=True)
+    df.columns = ['year', 'month', 'mm', 'trend']
+    idx = pd.to_datetime(dict(year=df.year, month=df.month,
+                              day='01'))
+    df = df.set_index(idx)
+    df.index.name = 'time'
+    df = df.drop(['year', 'month'], axis=1)
+    ds = df.to_xarray() * 1000.0
+    for da in ds.data_vars:
+        ds[da].attrs['unit'] = 'ppb'
+    return ds
 
 
 def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
@@ -342,7 +362,8 @@ def _produce_CDAS_QBO(savepath=None):
     stan = df.iloc[stan_index + 2:-1, :]
     dfs = []
     for df in [orig, anom, stan]:
-        df.drop(df.tail(1).index, inplace=True)
+        df = df.head(41)  # keep all df 1979-2019
+        # df.drop(df.tail(1).index, inplace=True)
         df = df.melt(id_vars='YEAR', var_name='MONTH')
         datetime = pd.to_datetime((df.YEAR + '-' + df.MONTH).apply(str), format='%Y-%b')
         df.index = datetime
@@ -672,14 +693,14 @@ def _download_enso_ersst(loadpath, filename='noaa_ersst_nino.nc', index=False,
         nino_df = nino_df.rename_axis('time')
         nino_xr = xr.Dataset(nino_df)
         if savepath is not None:
-            nino_xr.to_netcdf(path / filename)
+            nino_xr.to_netcdf(savepath / filename)
             print('Downloaded ersst_nino data and saved it to: ' + filename)
     if index:
         enso = nino_xr['ANOM_NINO3.4']
         enso.attrs['long_name'] = enso.name
         if savepath is not None:
-            enso.to_netcdf(path / 'anom_nino3p4_index.nc', 'w')
-            print_saved_file('anom_nino3p4_index.nc', path)
+            enso.to_netcdf(savepath / 'anom_nino3p4_index.nc', 'w')
+            print_saved_file('anom_nino3p4_index.nc', savepath)
         return enso
     else:
         return nino_xr
@@ -845,6 +866,7 @@ def _produce_radio_cold(savepath=None, no_qbo=False):
     from aux_functions_strat import overlap_time_xr
     from sklearn.linear_model import LinearRegression
     from aux_functions_strat import deseason_xr
+    import xarray as xr
     radio = calc_cold_point_from_sounding(
             times=None,
             return_anom=True,
@@ -853,7 +875,8 @@ def _produce_radio_cold(savepath=None, no_qbo=False):
     filename = 'radio_cold_index.nc'
     if no_qbo:
         filename = 'radio_cold_no_qbo_index.nc'
-        qbos = _produce_eof_pcs(reg_path, source='era5', plot=False)
+        # qbos = _produce_eof_pcs(reg_path, source='era5', plot=False)
+        qbos = xr.open_dataset(savepath / 'qbo_cdas_index.nc')
         new_time = overlap_time_xr(qbos, radio)
         qbos = qbos.sel(time=new_time)
         qbos = deseason_xr(qbos.to_array('regressors'), how='mean').to_dataset('regressors')
