@@ -137,43 +137,38 @@ def prepare_swoosh_xr(swoosh_filename='swoosh-v02.6-198401-201802-lonlatpress-20
 
 
 def get_all_swoosh_files(path):
-    import os
     import xarray as xr
-    import fnmatch
     import pandas as pd
+    from aux_functions_strat import path_glob
     """Reads all swoosh dataset downloaded from swoosh website and write
     them as xarray netcdf files, basically adding datetime index and importing
     just the 'combined' fields."""
-    filenames = []
-    for file in os.listdir(path + '.'):
-        if fnmatch.fnmatch(file, 'swoosh-v02.6*.*'):
-            filenames.append(file)
+    filenames = path_glob(path, 'swoosh-v02.6*.nc')
     datasets = []
-    for sw_filename in filenames:
-        dataset = xr.open_dataset(path + sw_filename, decode_times=False)
-        dataset.attrs['filename'] = sw_filename
+    for file in filenames:
+        dataset = xr.open_dataset(file, decode_times=False)
+        dataset.attrs['filename'] = file.as_posix().split('/')[-1]
         datasets.append(dataset)
-        print('importing ' + sw_filename)
+        print('importing {}'.format(file.as_posix().split('/')[-1]))
     data_dict = {}
-    for i in range(len(datasets)):
-        k = list(datasets[i].data_vars.keys())
-        combined_list = [name for name in datasets[i].data_vars.keys()
+    for dataset in datasets:
+        combined_list = [name for name in dataset.data_vars
                          if 'combined' in name.lower()]
-        to_drop = list(set(k) - set(combined_list))
-        datasets[i] = datasets[i].drop(to_drop)
+        dataset = dataset[combined_list]
         time = pd.date_range('1984-01-01', freq='MS',
-                             periods=len(datasets[i].time))
-        datasets[i]['time'] = time
-        if 'latpress' in datasets[i].attrs['filename'].split('-'):
-            dname = '-'.join(datasets[i].attrs['filename'].split('-')[-3:-1])
-        elif 'lonlatpress' in datasets[i].attrs['filename'].split('-'):
-            dname = '-'.join(datasets[i].attrs['filename'].split('-')[-4:-1])
-        elif 'lattheta' in datasets[i].attrs['filename'].split('-'):
-            dname = '-'.join(datasets[i].attrs['filename'].split('-')[-3:-1])
-        data_dict[dname] = datasets[i]
-        data_dict[dname].to_netcdf(path + 'swoosh_' + dname + '.nc')
-        print('Saved ' + dname + ' to nc file, in ' + path)
-    return data_dict
+                             periods=len(dataset.time))
+        dataset['time'] = time
+        if 'latpress' in dataset.attrs['filename'].split('-'):
+            dname = '-'.join(dataset.attrs['filename'].split('-')[-3:-1])
+        elif 'lonlatpress' in dataset.attrs['filename'].split('-'):
+            dname = '-'.join(dataset.attrs['filename'].split('-')[-4:-1])
+        elif 'lattheta' in dataset.attrs['filename'].split('-'):
+            dname = '-'.join(dataset.attrs['filename'].split('-')[-3:-1])
+        data_dict[dname] = dataset
+        data_dict[dname].to_netcdf(path / 'swoosh_{}.nc'.format(dname))
+        print('Saved {} to nc file, in {}'.format(dname, path))
+    print('Done!')
+    return
 
 
 def compare_all_swoosh(sw_d):
