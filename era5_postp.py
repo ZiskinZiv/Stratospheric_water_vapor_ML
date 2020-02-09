@@ -9,18 +9,18 @@ Created on Wed Mar 13 11:03:39 2019
 
 def concat_era5T(ds):
     import xarray as xr
-    field_0001 = [x for x in ds.data_vars if '0001' in x][0]
-    field_0005 = [x for x in ds.data_vars if '0005' in x][0]
-    field = [x for x in ds.data_vars if '0001' not in x and '0005' not in x][0]
+    field_0001 = [x for x in ds.data_vars if '0001' in x]
+    field_0005 = [x for x in ds.data_vars if '0005' in x]
+    field = [x for x in ds.data_vars if '0001' not in x and '0005' not in x]
     if field_0001 and field_0005:
-        da = xr.concat([ds[field_0001].dropna('time'),
-                        ds[field_0005].dropna('time')], 'time')
-        da.name = field_0001.split('_')[0]
+        da = xr.concat([ds[field_0001[0]].dropna('time'),
+                        ds[field_0005[0]].dropna('time')], 'time')
+        da.name = field_0001[0].split('_')[0]
     elif not field_0001 and not field_0005:
         return ds
     if field:
-        da = xr.concat([ds[field].dropna('time'), da], 'time')
-    dss = da.to_dataset(name=field)
+        da = xr.concat([ds[field[0]].dropna('time'), da], 'time')
+    dss = da.to_dataset(name=field[0])
     return dss
 
 
@@ -29,6 +29,7 @@ def proc_era5(path, field, model_name):
     import numpy as np
     if 'single' in model_name:
         era5 = xr.open_mfdataset(path + 'era5_' + field + '_*.nc')
+        era5 = concat_era5T(era5)
         start = era5.time.dt.year[0].values.item()
         end = era5.time.dt.year[-1].values.item()
         filename = '_'.join(['era5', str(field), '4Xdaily', str(start) +
