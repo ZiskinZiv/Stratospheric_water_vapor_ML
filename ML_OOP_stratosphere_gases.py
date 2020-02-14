@@ -279,42 +279,42 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
     return rds
 
 
-def produce_regressors_response_figs(X, results, level, time, grp='time.season'):
-    time_slice = False
-    if isinstance(time, str):
-        time = int(time)  # assuming year only
-    if not isinstance(time, int) and len(time) == 2:
-        time = [str(x) for x in time]
-        time_slice = True
-        min_time = time[0]
-        max_time = time[1]
-    field = results.original.attrs['long_name']
-    units = results.original.attrs['units']
-    if time_slice:
-        da = results.params.sel(level=level, method='nearest') * X.sel(time=slice(min_time, max_time))
-    else:
-        da = results.params.sel(level=level, method='nearest') * X.sel(time=str(time))
-    plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
-                  'add_colorbar': False,
-                  'extend': 'both'}
-    plt_kwargs.update({'center': 0.0, 'levels': 41})
-    da_seasons = da.groupby(grp).mean('time')
-    grp_row = grp.split('.')[-1]
-    fg = da_seasons.plot.contourf(row=grp_row, col='regressors', **plt_kwargs)
-    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
-    fg.add_colorbar(
-        cax=cbar_ax, orientation="horizontal", label=units,
-        format='%0.3f')
-    # year = list(set(da.time.dt.year.values))[0]
-    level = da_seasons.level.values.item()
-    if time_slice:
-        fg.fig.suptitle('{}, level={:.2f} hPa , time={} to {}'.format(
-                field, level, min_time, max_time), fontsize=12, fontweight=750)
-    else:
-        fg.fig.suptitle('{}, level={:.2f} hPa , time={}'.format(
-                field, level, time), fontsize=12, fontweight=750)
-    fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
-    return fg
+#def produce_regressors_response_figs(X, results, level, time, grp='time.season'):
+#    time_slice = False
+#    if isinstance(time, str):
+#        time = int(time)  # assuming year only
+#    if not isinstance(time, int) and len(time) == 2:
+#        time = [str(x) for x in time]
+#        time_slice = True
+#        min_time = time[0]
+#        max_time = time[1]
+#    field = results.original.attrs['long_name']
+#    units = results.original.attrs['units']
+#    if time_slice:
+#        da = results.params.sel(level=level, method='nearest') * X.sel(time=slice(min_time, max_time))
+#    else:
+#        da = results.params.sel(level=level, method='nearest') * X.sel(time=str(time))
+#    plt_kwargs = {'cmap': 'bwr', 'figsize': (15, 10),
+#                  'add_colorbar': False,
+#                  'extend': 'both'}
+#    plt_kwargs.update({'center': 0.0, 'levels': 41})
+#    da_seasons = da.groupby(grp).mean('time')
+#    grp_row = grp.split('.')[-1]
+#    fg = da_seasons.plot.contourf(row=grp_row, col='regressors', **plt_kwargs)
+#    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+#    fg.add_colorbar(
+#        cax=cbar_ax, orientation="horizontal", label=units,
+#        format='%0.3f')
+#    # year = list(set(da.time.dt.year.values))[0]
+#    level = da_seasons.level.values.item()
+#    if time_slice:
+#        fg.fig.suptitle('{}, level={:.2f} hPa , time={} to {}'.format(
+#                field, level, min_time, max_time), fontsize=12, fontweight=750)
+#    else:
+#        fg.fig.suptitle('{}, level={:.2f} hPa , time={}'.format(
+#                field, level, time), fontsize=12, fontweight=750)
+#    fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+#    return fg
 
 
 def compare_RI(rds1, rds2, names=['rds1', 'rds2']):
@@ -434,13 +434,17 @@ def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
         # cvr_level = cvr.sel(level=slice(level[0], level[1]))
     # else:
     #     raise('level should be either a len(2) list or int')
-    if len(param_names) == 2:
+    if len(param_names) == 1:
+        tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
+        fg = tt.plot(col='task', xscale='log')
+        fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
+    elif len(param_names) == 2:
         tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
         fg = tt.plot.contourf(vmin=0.0, levels=21, col='task', xscale='log', yscale='log')
         fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
     elif len(param_names) == 3:
         tt = cvr_level[['mean_train_score', 'mean_test_score']].to_array(dim='task')
-        fg = tt.plot.contourf(vmin=0.0, levels=21, row='degree',col='task', xscale='log', yscale='log')
+        fg = tt.plot.contourf(vmin=0.0, levels=21, row='coef0',col='task', xscale='log', yscale='log')
         fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
     return cvr_level
 
@@ -2133,41 +2137,90 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.show()
                 return fg
     elif len(results) > 1:
+        data = [p.prepare_to_plot_one_rds(rds) for rds in results]
+        key = p.plot_key_list[0]
+        geo_key = p.plot_key_list[1]
+        # concat the results da's togather:
+        data = xr.concat(data, 'model')
+        # add labels to models:
+        if res_label is None:
+            data['model'] = ['result_{}'.format(x) for x in range(len(results))]
+        else:
+            data['model'] = res_label
         if key == 'r2':
-            plt_kwargs = {'yscale': 'log', 'yincrease': False,
-                          'cmap': 'viridis', 'figsize': (6 * len(results), 8),
-                          'levels': 41, 'vmin': 0.0}
-            # transform into array:
-            da_list = [x['r2_adj'] for x in results]
-            for i, da in enumerate(da_list):
-                da.name = res_label[i]
-            ds = xr.merge(da_list)
-            da = ds.to_array(dim='regressors', name='name')
-            if 'lon' in da.dims:
-                if val == 'lon':
-                    da = aux.xr_weighted_mean(da, mean_on_lon=False,
-                                              mean_on_lat=True)
+            cbar_kwargs = {'format': '%.2f', 'aspect': 50}  # , 'spacing': 'proportional'}
+            label_add = r'Adjusted $R^2$'
+            plt_kwargs.update({'cmap': 'viridis', 'figsize': (15, 10),
+                               'yincrease': False, 'levels': 41, 'vmin': 0.0,
+                               'yscale': 'log'})
+            if geo_key == 'map':
+                if p.level is not None:
+                    label_add += ' at level= {:.2f} hPa'.format(p.level)
                 else:
-                    da = aux.xr_weighted_mean(da, mean_on_lon=True,
-                                              mean_on_lat=False)
-            da['regressors'] = res_label
-            # copy attrs to new da:
-            for key, value in results[0]['r2_adj'].attrs.items():
-                da.attrs[key] = value
-            plt_kwargs.update(kwargs)
-            fg = da.plot.contourf(col='regressors', **plt_kwargs)
-            fg.fig.subplots_adjust(top=0.92, right=0.82, left=0.05)
-            # [ax.invert_yaxis() for ax in con.ax.figure.axes]
-            for i, ax in enumerate(fg.axes.flat):
-                ax.set_title(res_label[i], loc='center')
-            [ax.invert_yaxis() for ax in fg.axes.flat]
-#            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
-#             con.ax.figure.axes]
-            [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
-             fg.axes.flat]
-            fg.fig.suptitle('R^2 adjusted', fontsize=12, fontweight=750)
-            plt.show()
-            return fg
+                    raise Exception('pls pick a level for this plot')
+                plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
+                plt_kwargs.update(kwargs)
+                # fg.colorbar.set_label(r'Adjusted $R^2$')
+                fg = data.plot.contourf(col='model', **plt_kwargs)
+                if cartopy:
+                    [ax.coastlines() for ax in fg.axes.flatten()]
+                    [ax.gridlines(
+                        crs=ccrs.PlateCarree(),
+                        linewidth=1,
+                        color='black',
+                        alpha=0.5,
+                        linestyle='--',
+                        draw_labels=False) for ax in fg.axes.flatten()]
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])
+                    fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kwargs)
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=250)
+                fg.fig.subplots_adjust(bottom=0.1, top=0.90, left=0.1)
+                plt.show()
+                return fg
+        elif key == 'RI' or key == 'params':
+            cmaps = {'params': 'bwr', 'RI': 'viridis'}
+            plt_kwargs.update({'cmap': cmaps.get(key), 'figsize': (15, 10),
+                               'add_colorbar': False,
+                               'extend': 'both'})
+            if key == 'params':
+                plt_kwargs.update({'center': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+                label_add = r'$\beta$ coefficients'
+            elif key == 'RI':
+                plt_kwargs.update({'vmin': 0.0, 'levels': 41})  # , 'vmax': cmap_max})
+                label_add = 'Relative impact'
+            if data.regressors.size > 5:
+                plt_kwargs.update(col_wrap = 4)
+            else:
+                plt_kwargs.update(col_wrap = None)
+            if geo_key == 'map':
+                plt_kwargs.update(kwargs)
+                if p.level is not None:
+                    label_add += ' at level= {:.2f} hPa'.format(p.level)
+                else:
+                    raise Exception('pls pick a level for this plot')
+                fg = data.plot.contourf(row='model', col='regressors', **plt_kwargs)
+                if not no_colorbar:
+                    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+                    fg.add_colorbar(
+                        cax=cbar_ax, orientation="horizontal", label='',
+                        format='%0.3f')
+                fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
+                if cartopy:
+                    [ax.coastlines() for ax in fg.axes.flatten()]
+                    [ax.gridlines(
+                        crs=ccrs.PlateCarree(),
+                        linewidth=1,
+                        color='black',
+                        alpha=0.5,
+                        linestyle='--',
+                        draw_labels=False) for ax in fg.axes.flatten()]
+    #            cb = con.colorbar
+    #            cb.set_label(da.sel(opr='original').attrs['units'], fontsize=10)
+                # plt_kwargs.update({'extend': 'both'})
+                fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+                plt.show()
+                return fg
 
 
 #def plot_like_results_decrapeted(*results, plot_type={'predict_by_level': 'mean'},
