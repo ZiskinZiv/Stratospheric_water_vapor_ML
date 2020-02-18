@@ -11,6 +11,7 @@ Created on Sun Mar 10 13:20:30 2019
 from strat_paths import work_chaim
 from strat_paths import adams_path
 from sklearn_xarray import RegressorWrapper
+from xarray.core.dataset import Dataset
 # import warnings filter
 from warnings import simplefilter
 # ignore all future warnings
@@ -2547,6 +2548,28 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
     #     cmap = 'bwr'
     # else:
     #     cmap = 'viridis'
+
+class PredictorSet(Dataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    def show(self):
+        for da in self.data_vars:
+            print('{} : {}'.format(da, self[da].dims))
+    def stack(self, *args, **kwrags):
+        self = super().stack(*args, **kwrags)
+        print('special stack!')
+        return self
+    def load(self):
+        return self
+    def poly_features(self, intercept=False, interaction_only=False):
+        return self
+    def smart_select(self, *args):
+        return self
+    def level_month_shift(self, *args):
+        return self
+
+            
+            
 class ImprovedRegressor(RegressorWrapper):
     def __init__(self, estimator=None, reshapes=None, sample_dim=None,
                  **kwargs):
