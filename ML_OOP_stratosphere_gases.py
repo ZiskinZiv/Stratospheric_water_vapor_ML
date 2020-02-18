@@ -973,6 +973,7 @@ def pre_proccess(params, verbose=True):
     time_period = params.time_period
     area_mean = params.area_mean
     path = params.work_path
+    poly = params.poly_features
     add_poly_reg = params.add_poly_reg
     # dict of {regressors: [1, 36]}
     reg_time_shift = params.reg_time_shift
@@ -1103,6 +1104,8 @@ def pre_proccess(params, verbose=True):
     # stacking reg:
     reg_names = [x for x in regressors.data_vars.keys()]
     reg_stacked = regressors[reg_names].to_array(dim='regressors').T
+    if poly is not None:
+        reg_stacked = poly_features(reg_stacked, degree=poly)
     # da stacking:
     dims_to_stack = [x for x in da.dims if x != 'time']
     da = da.stack(samples=dims_to_stack)
