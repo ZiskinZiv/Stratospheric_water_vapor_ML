@@ -12,6 +12,7 @@ from strat_paths import work_chaim
 from strat_paths import adams_path
 from sklearn_xarray import RegressorWrapper
 from xarray.core.dataset import Dataset
+from pathlib import Path
 # import warnings filter
 from warnings import simplefilter
 # ignore all future warnings
@@ -39,8 +40,8 @@ class Parameters:
                  lat_slice=[-20, 20],
                  plevels=None,
                  # original_data_file='swoosh_lonlatpress-20deg-5deg.nc',
-                 original_data_file='swoosh_latpress-2.5deg.nc'
-                 ):
+                 data_file='swoosh_latpress-2.5deg.nc'
+                 ,**kwagrs):
         self.filing_order = ['data_name', 'field', 'model_name', 'season',
                              'reg_selection', 'special_run']
         self.delimeter = '_'
@@ -65,7 +66,7 @@ class Parameters:
         self.species = species  # can be T or phi for era5
         self.time_period = time_period
         self.area_mean = area_mean
-        self.original_data_file = original_data_file  # original data filename (in work_path)
+        self.data_file = data_file  # original data filename (in work_path)
         self.work_path = work_chaim
         self.cluster_path = adams_path
 
@@ -528,7 +529,7 @@ def process_gridsearch_results(GridSearchCV):
     return ds
 
 
-def run_model_with_shifted_plevels(model, X, y, p, plevel=None, lms=None):
+def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None):
     import xarray as xr
     import numpy as np
     from aux_functions_strat import text_blue
@@ -555,8 +556,10 @@ def run_model_with_shifted_plevels(model, X, y, p, plevel=None, lms=None):
         level_shift = lms.sel(level=lev, method='nearest').values
         shift_dict = dict(zip(regs, level_shift))
         Xcopy = reg_shift(X, shift_dict)
-        p.plevels = lev
-        _, y = pre_proccess(p, verbose=False)
+        # p.plevels = lev
+        # _, y = pre_proccess(p, verbose=False)
+        Target = Target.from_dict(dict(plevels=lev, verbose=False))
+        y = Target.pre_process()
         y_shifted = y.sel(time=Xcopy.time)
 #            print('shifting target data {} months'.format(str(shift)))
 #            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
@@ -606,7 +609,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            reg_time_shift=None, season=None, add_poly_reg=None, lms=None,
            special_run=None, gridsearch=False, plevels=None,
            lat_slice=[-60, 60], swoosh_latlon=False, param_grid=None,
-           original_data_file='swoosh_latpress-2.5deg.nc'):
+           data_file='swoosh_latpress-2.5deg.nc'):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -615,6 +618,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     example special_run={'optimize_time_shift':(-12,12)}
     use optimize_time_shift with area_mean=True,
     add_poly_reg = {'anom_nino3p4': 2} : adds enso^2 to regressors"""
+    from aux_functions_strat import overlap_time_xr
     def parse_cv(cv):
         from sklearn.model_selection import KFold
         from sklearn.model_selection import RepeatedKFold
@@ -644,7 +648,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     # ints. parameters and feed run_ML args to it:
     arg_dict = locals()
     if swoosh_latlon:
-        arg_dict['original_data_file'] = 'swoosh_lonlatpress-20deg-5deg.nc'
+        arg_dict['data_file'] = 'swoosh_lonlatpress-20deg-5deg.nc'
         arg_dict['swoosh_field'] = 'combinedanom'
         print('lat/lon run selected, (no fill product for lat/lon)')
     keys_to_remove = ['parse_cv', 'RI_proc', 'ml_params', 'cv', 'gridsearch',
@@ -655,7 +659,15 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
     # select model:
     ml_model = p.select_model(model_name, ml_params)
     # pre proccess:
-    X, y = pre_proccess(p)
+    Pset = PredictorSet(**arg_dict, loadpath=Path().cwd()/'regressors')
+    Target = TargetArray(**arg_dict, loadpath=work_chaim)
+    X = Pset.pre_process()
+    y = Target.pre_process()
+    # align time X, y:
+    new_time = overlap_time_xr(y, X)
+    X = X.sel(time=new_time)
+    y = y.sel(time=new_time)
+    # X, y = pre_proccess(p)
     # unpack regressors:
 
     print('Running with regressors: ', ', '.join([x for x in
@@ -759,37 +771,37 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         ax.yaxis.set_major_formatter(ScalarFormatter())
         print('Done!')
         return rds
-    if (p.special_run is not None
-            and 'run_with_shifted_plevels' in p.special_run.keys()):
-        import xarray as xr
-        from aux_functions_strat import text_blue
-        print(model.estimator)
-        level_month_shift = p.special_run['run_with_shifted_plevels']
-        regs = [x for x in level_month_shift.reg_shifted.values]
-        print('Running with special mode: run_with_shifted_plevels,' +
-              ' with regressors shifts per level: {}'.format(regs))
-#        for reg in regs:
-        level_results = []
-        lms = level_month_shift
-        for lev in lms.level.values:
-            level_shift = lms.sel(level=lev, method='nearest').values
-            shift_dict = dict(zip(regs, level_shift))
-            Xcopy = reg_shift(X, shift_dict)
-            p.plevels = lev
-            _, y = pre_proccess(p, verbose=False)
-            y_shifted = y.sel(time=Xcopy.time)
-#            print('shifting target data {} months'.format(str(shift)))
-#            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
-#                  y_shifted.time.size))
-            model.fit(Xcopy, y_shifted, verbose=False)
-            level_results.append(model.results_)
-        rds = xr.concat(level_results, dim='level')
-        print(text_blue('Done!'))
-        # rds = xr.concat(reg_results, dim='reg_shifted')
-        rds['reg_shifted'] = regs
-        rds['level_month_shift'] = level_month_shift
-        model.results_ = rds
-        return model
+#    if (p.special_run is not None
+#            and 'run_with_shifted_plevels' in p.special_run.keys()):
+#        import xarray as xr
+#        from aux_functions_strat import text_blue
+#        print(model.estimator)
+#        level_month_shift = p.special_run['run_with_shifted_plevels']
+#        regs = [x for x in level_month_shift.reg_shifted.values]
+#        print('Running with special mode: run_with_shifted_plevels,' +
+#              ' with regressors shifts per level: {}'.format(regs))
+##        for reg in regs:
+#        level_results = []
+#        lms = level_month_shift
+#        for lev in lms.level.values:
+#            level_shift = lms.sel(level=lev, method='nearest').values
+#            shift_dict = dict(zip(regs, level_shift))
+#            Xcopy = reg_shift(X, shift_dict)
+#            p.plevels = lev
+#            _, y = pre_proccess(p, verbose=False)
+#            y_shifted = y.sel(time=Xcopy.time)
+##            print('shifting target data {} months'.format(str(shift)))
+##            print('X months: {}, y_months: {}'.format(X_shifted.time.size,
+##                  y_shifted.time.size))
+#            model.fit(Xcopy, y_shifted, verbose=False)
+#            level_results.append(model.results_)
+#        rds = xr.concat(level_results, dim='level')
+#        print(text_blue('Done!'))
+#        # rds = xr.concat(reg_results, dim='reg_shifted')
+#        rds['reg_shifted'] = regs
+#        rds['level_month_shift'] = level_month_shift
+#        model.results_ = rds
+#        return model
     # check for CV builtin model(e.g., LassoCV, GridSearchCV):
     if cv is not None:
         if hasattr(ml_model, 'cv') and not RI_proc:
@@ -811,7 +823,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
 #            else:
             model.set_params(cv=cv)
             print(model.estimator_)
-            model  = run_model_with_shifted_plevels(model, X, y, p, plevel=plevels, lms=lms)
+            model  = run_model_with_shifted_plevels(model, X, y, Target, plevel=plevels, lms=lms)
             # model.fit(X, y)
     # next, just do cross-val with models without CV(e.g., LinearRegression):
         if not hasattr(ml_model, 'cv') and not RI_proc:
@@ -828,13 +840,13 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
                                   scoring='r2', verbose=1)
                 # mul = (MultiOutputRegressor(gr, n_jobs=1))
                 print(gr)
-                cvr = run_model_with_shifted_plevels(gr, X, y, p, plevel=plevels, lms=lms)
+                cvr = run_model_with_shifted_plevels(gr, X, y, Target, plevel=plevels, lms=lms)
                 # mul.fit(X, y)
                 return cvr
             mt_dim = [x for x in y.dims if x != model.sample_dim][0]
             mul = (MultiOutputRegressor(model.estimator))
             print(mul)
-            mul = run_model_with_shifted_plevels(mul, X, y, p, plevel=plevels, lms=lms)
+            mul = run_model_with_shifted_plevels(mul, X, y, Target, plevel=plevels, lms=lms)
             # mul.fit(X, y)
             cv_results = [cross_validate(mul.estimators_[i], X,
                                          y.isel({mt_dim: i}),
@@ -844,10 +856,10 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
             cds = proc_cv_results(cv_results, y, model.sample_dim)
             return cds
     elif RI_proc:
-        model.make_RI(X, y, p, plevels=plevels, lms=lms)
+        model.make_RI(X, y, Target, plevels=plevels, lms=lms)
     else:
         print(model.estimator)
-        model  = run_model_with_shifted_plevels(model, X, y, p, plevel=plevels, lms=lms)
+        model  = run_model_with_shifted_plevels(model, X, y, Target, plevel=plevels, lms=lms)
         # model.fit(X, y)
     # append parameters to model class:
     model.run_parameters_ = p
@@ -2548,28 +2560,410 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
     #     cmap = 'bwr'
     # else:
     #     cmap = 'viridis'
+class TargetArray(Dataset):
+    def __init__(self, *args, sample_dim='time', mt_dim='samples',
+                 data_file=None, species='h2o', loadpath=None, verbose=False,
+                 season=None, deseason_method=None, time_period=None, field=None,
+                 plevels=None, area_mean=None,
+                 swoosh_field='combinedanomfillanom', lat_slice=None,
+                 **kwargs):
+        super().__init__(*args)
+        self.loadpath = loadpath
+        self.verbose = verbose
+        self.deseason_method = deseason_method
+        self.sample_dim = sample_dim
+        self.mt_dim = mt_dim
+        self.time_period = time_period
+        self.season = season
+        self.species = species
+        self.data_file = data_file
+        self.swoosh_field = swoosh_field
+        self.field = field
+        self.plevels = plevels
+        self.area_mean = area_mean
+        self.lat_slice = lat_slice
+
+    def from_dict(self, d):
+        self.__dict__.update(d)
+        return self
+
+    def show(self, name='all'):
+        from termcolor import colored
+        if name == 'all':
+            for attr, value in vars(self).items():
+                print(colored('{} : '.format(attr), color='blue', attrs=['bold']), end='')
+                print(colored(value, color='white', attrs=['bold']))
+        elif hasattr(self, name):
+            print(colored('{} : '.format(name), color='blue', attrs=['bold']), end='')
+            print(colored(self.name, color='white', attrs=['bold']))
+
+    def select_season(self, season):
+        to_update = self.__dict__
+        self_season = self['{}.season'.format(self.sample_dim)] == season
+        self = self.sel({self.sample_dim: self_season})
+        self.__dict__.update(to_update)
+        self.season = season
+        return self
+
+    def select_times(self, times):
+        to_update = self.__dict__
+        self = self.sel({self.sample_dim: slice(*times)})
+        self.__dict__.update(to_update)
+        self.attrs['times'] = times
+        self.time_period = times
+        return self
+
+    def lat_level_select(self, lat_slice):
+        to_update = self.__dict__
+        if self['level'].size > 1:
+            self = self.sel(
+                level=slice(
+                    100, 1), lat=slice(
+                    *lat_slice))
+        else:
+            self = self.sel(lat=slice(*lat_slice))
+        self.__dict__.update(to_update)
+        self.lat_slice = lat_slice
+        return self
+
+    def load(self, loadpath=None, data_file=None, species=None,
+             swoosh_field=None, verbose=None):
+        import xarray as xr
+        import click
+        # read all locals() and replace Nons vals with defualts from class:
+        vars_dict = {}
+        for key, val in locals().items():
+            if val is None:
+                vars_dict[key] = getattr(self, key)
+        loadpath = vars_dict.get('loadpath')
+        data_file = vars_dict.get('data_file')
+        species = vars_dict.get('species')
+        swoosh_field = vars_dict.get('swoosh_field')
+        verbose = vars_dict.get('verbose')
+        if species != 'h2o' and species != 'o3':
+            swoosh_field = None
+        if swoosh_field is not None:
+            # load swoosh from work dir:
+            field = '{}{}q'.format(swoosh_field, species)
+            ds = xr.load_dataset(loadpath / data_file)[field]
+            if verbose:
+                print('loading SWOOSH file: {}'.format(data_file))
+            if verbose:
+                print('loading SWOOSH field: {}'.format(field))
+        elif (swoosh_field is None and (species == 'h2o' or species == 'o3')):
+            msg = 'species is {}, and original_data_file is not SWOOSH'.format(
+                species)
+            msg += ',Do you want to continue?'
+            if click.confirm(msg, default=True):
+                field = species
+                ds = xr.load_dataset(
+                    loadpath /
+                    data_file)[
+                    field]
+                if verbose:
+                    print('loading file: {}'.format(data_file))
+        else:
+            field = species
+            ds = xr.load_dataset(loadpath / data_file)[field]
+            if self.verbose:
+                print('loading file: {}'.format(data_file))
+        ds = ds.to_dataset(name=field)
+        self = TargetArray(ds, **vars(self))
+        assert self.sample_dim in [x for x in self.dims]
+        self.field = field
+        return self
+
+    def remove_nans(self, field):
+        from aux_functions_strat import remove_nan_xr
+        self_da = remove_nan_xr(self[field], just_geo=False)
+        return self_da
+
+    def normalize(self, norm):
+        from aux_functions_strat import normalize_xr
+        ds = normalize_xr(
+            self,
+            norm=norm,
+            verbose=self.verbose)  # 1 is mean/std
+        self = TargetArray(ds, **vars(self))
+        self.attrs = ds.attrs
+        return self
+
+    def deseason(self, how):
+        from aux_functions_strat import deseason_xr
+        if self.season is not None:
+            self[self.field] = deseason_xr(self[self.field],
+                                           season=self.season, how=how,
+                                           verbose=self.verbose)
+        else:
+            self[self.field] = deseason_xr(self[self.field], how=how,
+                                           verbose=self.verbose)
+        self.deseason_method = how
+        return self
+
+    def do_area_mean(self):
+        from aux_functions_strat import xr_weighted_mean
+        from aux_functions_strat import lat_mean
+        to_update = self.__dict__
+        if self.verbose:
+            print('selecting data area mean')
+        self = xr_weighted_mean(self)
+        self.__dict__.update(to_update)
+        self.area_mean = True
+        return self
+
+    def select_plevels(self, plevels):
+        to_update = self.__dict__
+        self = self.sel(
+                    level=plevels,
+                    method='nearest').expand_dims('level')
+        self.__dict__.update(to_update)
+        self.plevels = plevels
+        return self
+
+    def save_dim_attrs(self):
+        attrs = [self[dim].attrs for dim in self.dims]
+        self.attrs['coords_attrs'] = dict(zip(self.dims, attrs))
+        return self
+
+    def mt_dim_stack(self):
+        dims_to_stack = [x for x in self.dims if x != self.sample_dim]
+        y = self[self.field].stack({self.mt_dim: dims_to_stack})
+        return y
+
+    def pre_process(self, stack=True):
+        # flow of target pre-processing:
+        # 1) load all predictors
+        self = self.load()
+        # 2) select times:
+        self = self.select_times(self.time_period)
+        # 3) lat slice and level:
+        self = self.lat_level_select(self.lat_slice)
+        # 4) select season:
+        if self.season is not None:
+            self = self.select_season(self.season)
+        # 5) area mean:
+        if self.area_mean:
+            self = self.do_area_mean()
+        # 6) select plevels:
+        if self.plevels is not None:
+            self = self.select_plevels(self.plevels)
+        # 7) deseason
+        if self.deseason_method is not None:
+            self = self.deseason(how=self.deseason_method)
+        # 8) save dim attrs:
+        self = self.save_dim_attrs()
+        attrs = self.attrs
+        # 9) remove nans:
+        self = TargetArray(self.remove_nans(self.field).to_dataset(name=self.field), **vars(self))
+        self.attrs = attrs
+        if stack:
+            y = self.mt_dim_stack()
+            y.attrs = self.attrs
+            for key, val in self[self.field].attrs.items():
+                y.attrs[key] = val
+            return y
+        else:
+            return self
+
+
+def sort_predictors_list(pred_list):
+    import re
+    inter_splitted = [re.split("[*]+", x) for x in pred_list]
+    new_list = []
+    for item in inter_splitted:
+        if len(item) > 1:
+            new_item = sorted(item)
+            new_list.append('*'.join(new_item))
+        elif len(item) == 1:
+            new_list.append(item[0])
+    return new_list
+
 
 class PredictorSet(Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-    def show(self):
-        for da in self.data_vars:
-            print('{} : {}'.format(da, self[da].dims))
-    def stack(self, *args, **kwrags):
-        self = super().stack(*args, **kwrags)
-        print('special stack!')
+    def __init__(self, *args, sample_dim='time', feature_dim='regressors',
+                 loadpath=None, verbose=False, reg_shift=None, season=None,
+                 deseason_dict=None, regressors=None, time_period=None,
+                 **kwargs):
+        super().__init__(*args)
+        self.loadpath = loadpath
+        self.verbose = verbose
+        self.deseason_dict = deseason_dict
+        self.sample_dim = sample_dim
+        self.feature_dim = feature_dim
+        self.regressors = regressors
+        self.time_period = time_period
+        self.reg_shift = reg_shift
+        self.season = season
+
+    def from_dict(self, d):
+        self.__dict__.update(d)
         return self
+    
+    def show(self, name='all'):
+        from termcolor import colored
+        if name == 'all':
+            for attr, value in vars(self).items():
+                print(colored('{} : '.format(attr), color='blue', attrs=['bold']), end='')
+                print(colored(value, color='white', attrs=['bold']))
+        elif hasattr(self, name):
+            print(colored('{} : '.format(name), color='blue', attrs=['bold']), end='')
+            print(colored(self.name, color='white', attrs=['bold']))
+
     def load(self):
+        from make_regressors import load_all_regressors
+        ds = load_all_regressors(self.loadpath)
+        if self.verbose:
+            print('loaded *index.nc files from {}'.format(self.loadpath))
+        self = PredictorSet(ds, **vars(self))
+        assert self.sample_dim in [x for x in self.dims]
         return self
-    def poly_features(self, intercept=False, interaction_only=False):
+
+    def normalize(self):
+        from aux_functions_strat import normalize_xr
+        ds = normalize_xr(self, norm=1, verbose=self.verbose)
+        self = PredictorSet(ds, **vars(self))
+        self.attrs = ds.attrs
         return self
-    def smart_select(self, *args):
+
+    def deseason(self):
+        from aux_functions_strat import deseason_xr
+        # update this dict to include predictors to be deseasoned and how:
+        deseason_dict = {'radio_cold': 'mean', 'radio_cold_no_qbo': 'mean',
+                         'era5_bdc': 'mean'}
+        if self.deseason_dict is not None:
+            deseason_dict.update(self.deseason_dict)
+        for pred, how in deseason_dict.items():
+            if pred in self.data_vars:
+                self[pred] = deseason_xr(self[pred], how=how,
+                                         verbose=self.verbose)    
         return self
+
+    def season(self, season):
+        self_season = self['{}.season'.format(self.sample_dim)] == season
+        to_update = self.__dict__
+        self = self.sel({self.sample_dim: self_season})
+        self.__dict__.update(to_update)
+        self.season = season
+        return self
+
+    def select_times(self, times):
+        to_update = self.__dict__
+        self = self.sel({self.sample_dim: slice(*times)})
+        self.__dict__.update(to_update)
+        self.attrs['times'] = times
+        self.time_period = times
+        return self
+
+    def select(self, pred_list, base_preds=True, stack=True):
+        # first check for * symbol:
+        import re
+        import numpy as np
+        pred_list = sort_predictors_list(pred_list)
+        inter_splitted = [re.split("[*]+", x) for x in pred_list]
+        max_degree = []
+        max_inter = []
+        all_base_preds = []
+        for item in inter_splitted:
+            max_inter.append(len(item))
+            max_power = []
+            for pr in item:
+                all_base_preds.append(pr.split('^')[0])
+                try:
+                    max_power.append(int(pr.split('^')[-1]))
+                except ValueError:
+                    max_power.append(1)
+            max_degree.append(max(max_power))
+        degree = np.max(np.array(max_inter) * np.array(max_degree))
+#        interactions = [x for x in pred_list if '*' in x]
+#        power = [x for x in pred_list if '^' in x]
+#        # select only those without power or interactions:
+#        preds = list(
+#            set(pred_list).difference(
+#                set(power).union(
+#                    set(interactions))))
+#        if not preds:
+        all_preds = list(set(all_base_preds))
+        self_attrs = self.attrs
+        to_update = self.__dict__
+        self = self[all_preds]
+        self.__dict__.update(to_update)
+        to_update = self.__dict__
+        # drop nans from sample_dim:
+        self = self.dropna(self.sample_dim)
+        self.__dict__.update(to_update)
+        if base_preds:
+            self.attrs = self_attrs
+            return self
+        print(pred_list)
+        # transpose all dims to sample_dim first (time):
+        da = self.to_array(self.feature_dim).transpose(self.sample_dim, ...)
+        poly_stacked = poly_features(da, degree=degree)
+        # now select just the predictors from pred_list, first sort them:
+        features = poly_stacked[self.feature_dim].values
+        sorted_features = sort_predictors_list(features)
+        print('sorted_f:',sorted_features)
+        poly_stacked[self.feature_dim] = sorted_features
+        poly_selected = poly_stacked.sel({self.feature_dim: pred_list})
+        poly_selected.name = 'X'
+        if stack:
+            return poly_selected
+        else:
+            ds = poly_selected.to_dataset(self.feature_dim)
+            self = PredictorSet(ds, **vars(self))
+            self.attrs = self_attrs
+            return self
+
+    def reg_shift(self, reg_time_shift):
+        import xarray as xr
+        ds_list = []
+        for reg, shifts in reg_time_shift.items():
+            reg_shift_ds = regressor_shift(self[reg],
+                                           including_lag0=False,
+                                           shifts=shifts)
+            ds_list.append(reg_shift_ds)
+        ds = xr.merge(ds_list)
+        new_self = xr.merge([self, ds])
+        self = PredictorSet(new_self.dropna(self.sample_dim), **vars(self))
+        return self
+
+    def plot(self):
+        ax = self.to_dataframe().plot()
+        ax.grid()
+        return ax
+
     def level_month_shift(self, *args):
         return self
 
-            
-            
+    def pre_process(self, stack=True):
+        # flow of predictors pre-processing:
+        # 1) load all predictors
+        self = self.load()
+        # 2) select base predictors (i.e., without poly)
+        self = self.select(self.regressors, base_preds=True)
+        # 3) select time period
+        self = self.select_times(self.time_period)
+        # 4) deseason
+        self = self.deseason()
+        # 5) normalize
+        self = self.normalize()
+        # 6) optional : reg_shift
+        if self.reg_shift is not None:
+            self = self.reg_shift(self.reg_shift)
+        # 7) optional: season selection
+        if self.season is not None:
+            self = self.season(self.season)
+        # 8) to_array - stacking
+        if stack:
+            X = self.select(self.regressors, base_preds=False, stack=True)
+            return X
+        else:
+            self = self.select(self.regressors, base_preds=False, stack=False)
+        # X = self.to_array(dim=self.feature_dim).T
+        # 9) optional: poly features
+        # outside of PredictorSet scope : align sample_dim (time) with da(TargetArray)
+        return self
+
+
 class ImprovedRegressor(RegressorWrapper):
     def __init__(self, estimator=None, reshapes=None, sample_dim=None,
                  **kwargs):
@@ -2694,7 +3088,7 @@ class ImprovedRegressor(RegressorWrapper):
         print('saved results to {}.'.format(path_like))
         return
 
-    def make_RI(self, X, y, p, plevels=None, lms=None):
+    def make_RI(self, X, y, Target, plevels=None, lms=None):
         """ make Relative Impact score for estimator into xarray"""
         import aux_functions_strat as aux
         import warnings
@@ -2711,7 +3105,7 @@ class ImprovedRegressor(RegressorWrapper):
             keys = regressors_list[i].attrs['median']
             new_X = regressors_list[i].to_array(dim=feature_dim)
             new_X = aux.xr_order(new_X)
-            self = run_model_with_shifted_plevels(self, new_X, y, p, plevel=plevels, lms=lms)
+            self = run_model_with_shifted_plevels(self, new_X, y, Target, plevel=plevels, lms=lms)
             # self.fit(new_X, y)
             res_dict[keys] = self.results_
 #            elif mode == 'model_all':
