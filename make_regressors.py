@@ -44,7 +44,7 @@ def print_saved_file(name, path):
     return
 
 
-def load_all_regressors(loadpath=reg_path, plot=False):
+def load_all_regressors(loadpath=reg_path):
     """load all regressors(end with _index.nc') from loadpath to dataset"""
     import xarray as xr
     from collections import OrderedDict
