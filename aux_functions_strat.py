@@ -125,11 +125,12 @@ def reg_stack(regressors):
 
 def xr_weighted_mean(xarray, mean_on_lon=True, mean_on_lat=True):
     import xarray as xr
+    from ML_OOP_stratosphere_gases import TargetArray
     attrs = xarray.attrs
     if isinstance(xarray, xr.DataArray):
         ds = xarray.to_dataset()
         was_da = True
-    if isinstance(xarray, xr.Dataset):
+    if isinstance(xarray, xr.Dataset) or isinstance(xarray, TargetArray):
         ds = xarray
         was_da = False
     ds = area_from_latlon_xr(ds)
@@ -687,7 +688,10 @@ def normalize_xr(data, norm=1, down_bound=-1., upper_bound=1., verbose=True):
     try:
         data_name = data.name
     except AttributeError:
-        data_name = ''
+        try:
+            data_name = ', '.join([x for x in data.data_vars])
+        except:
+            data_name = ''
     if norm == 0:
         data = data
         norm_str = 'No'
