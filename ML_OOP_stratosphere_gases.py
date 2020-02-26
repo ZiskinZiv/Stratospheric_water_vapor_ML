@@ -241,7 +241,8 @@ def run_level_month_shift(plags=['qbo_cdas'],
 
 def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                                    'qbo_cdas', 'anom_nino3p4', 'ch4'],
-                                   savepath=None, latlon=False):
+                                   savepath=None, latlon=False,
+                                   extra='poly_2_no_ch4_extra_terms'):
     """data for fig 7"""
     import xarray as xr
     seasons = ['JJA', 'SON', 'DJF', 'MAM']
@@ -261,7 +262,7 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
         rds = run_ML(
             time_period=[
                 start,
-                '2018'],
+                '2019'],
             regressors=regressors,
             season=season,
             lms=lms, swoosh_latlon=latlon, RI_proc=True,
@@ -273,7 +274,7 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
     rds = xr.concat(ds_list, 'season')
     rds['season'] = seasons
     if savepath is not None:
-        filename = 'MLR_H2O_{}_seasons_cdas-plags_ch4_enso_1984-2018.nc'.format(res)
+        filename = 'MLR_H2O_{}_seasons_cdas-plags_ch4_enso_{}_{}-2019.nc'.format(res, extra, start)
         comp = dict(zlib=True, complevel=9)  # best compression
         encoding = {var: comp for var in rds.data_vars}
         rds.to_netcdf(savepath / filename, 'w', encoding=encoding)
@@ -2838,7 +2839,7 @@ class PredictorSet(Dataset):
                                          verbose=self.verbose)    
         return self
 
-    def season(self, season):
+    def select_season(self, season):
         self_season = self['{}.season'.format(self.sample_dim)] == season
         to_update = self.__dict__
         self = self.sel({self.sample_dim: self_season})
@@ -2951,7 +2952,7 @@ class PredictorSet(Dataset):
             self = self.reg_shift(self.reg_shift)
         # 7) optional: season selection
         if self.season is not None:
-            self = self.season(self.season)
+            self = self.select_season(self.season)
         # 8) to_array - stacking
         if stack:
             X = self.select(self.regressors, base_preds=False, stack=True)
