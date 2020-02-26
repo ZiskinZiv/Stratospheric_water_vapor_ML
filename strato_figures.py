@@ -393,7 +393,7 @@ def plot_figure_6(path=work_chaim):
     return fg
 
 
-def plot_figure_seasons(ncfile, path=work_chaim, field='params'):
+def plot_figure_seasons(ncfile, path=work_chaim, field='params', level=82):
     import xarray as xr
     rds = xr.open_dataset(path / ncfile)
     species = ncfile.split('.')[0].split('_')[1]
@@ -413,7 +413,8 @@ def plot_figure_seasons(ncfile, path=work_chaim, field='params'):
                   'add_colorbar': False,
                   'extend': None, 'yscale': 'log',
                   'yincrease': False, 'center': 0.0, 'levels': 41}
-    fg = rds[field].plot.contourf(
+    data = rds[field].sel(level=level, method='nearest')
+    fg = data.plot.contourf(
         col='regressors', row='season', **plt_kwargs)
     fg = add_horizontal_colorbar(fg, [0.1, 0.065, 0.8, 0.015], cbar_kwargs_dict={'label': unit})
     fg.fig.subplots_adjust(bottom=0.13, top=0.95, left=0.06)
