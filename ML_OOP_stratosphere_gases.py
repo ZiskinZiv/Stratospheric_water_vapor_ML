@@ -239,6 +239,8 @@ def run_level_month_shift(plags=['qbo_cdas'],
     return rds.level_month_shift
 
 
+
+
 def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
                                    'qbo_cdas', 'anom_nino3p4', 'ch4'],
                                    savepath=None, latlon=False,
@@ -259,6 +261,7 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
         start = '1984'
         res = 'latpress'
     for season in seasons:
+        print('selecting season {} for ML-analysis:'.format(season))
         rds = run_ML(
             time_period=[
                 start,
@@ -267,12 +270,20 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
             season=season,
             lms=lms, swoosh_latlon=latlon, RI_proc=True,
             lat_slice=[-60, 60])
+        attrs = rds.results_.attrs
         ds_list.append(rds.results_)
-    to_concat_vars = [x for x in ds_list[0].keys(
-            ) if 'time' not in ds_list[0][x].dims]
-    ds_list = [x[to_concat_vars] for x in ds_list]
-    rds = xr.concat(ds_list, 'season')
+
+    to_concat_season_vars = [x for x in ds_list[0].keys(
+    ) if 'time' not in ds_list[0][x].dims]
+    to_concat_time_vars = [x for x in ds_list[0].keys(
+    ) if 'time' in ds_list[0][x].dims]
+    ds_season_list = [x[to_concat_season_vars] for x in ds_list]
+    ds_time_list = [x[to_concat_time_vars] for x in ds_list]
+    rds = xr.concat(ds_season_list, 'season')
     rds['season'] = seasons
+    time_ds = xr.concat(ds_time_list, 'time')
+    rds = xr.merge([time_ds, rds])
+    rds.attrs = attrs
     if savepath is not None:
         filename = 'MLR_H2O_{}_seasons_cdas-plags_ch4_enso_{}_{}-2019.nc'.format(res, extra, start)
         comp = dict(zlib=True, complevel=9)  # best compression
@@ -1801,7 +1812,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                             p.lat[0], p.lat[1])
                     if p.lon_mean:
                         label_add += ', area mean of longitudes: {} to {}'.format(
-                            p.lon[0], p, lon[1])
+                            p.lon[0], p.lon[1])
                 data = aux.xr_reindex_with_date_range(data, time_dim='time',
                                                       drop=True, freq='MS')
                 # , 'vmax': cmap_max})
@@ -1965,7 +1976,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     label_add += ' at level= {:.2f} hPa'.format(p.level)
                 else:
                     raise Exception('pls pick a level for this plot')
-                fg = data.plot.contourf(col='regressors', **plt_kwargs)
+                if 'season' in data.dims:
+                    fg = data.plot.contourf(col='regressors', row='season', **plt_kwargs)
+                else:
+                    fg = data.plot.contourf(col='regressors', **plt_kwargs)
                 if not no_colorbar:
                     cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
                     fg.add_colorbar(
@@ -2165,7 +2179,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
         else:
             data['model'] = res_label
         if key == 'r2':
-            cbar_kwargs = {'format': '%.2f', 'aspect': 50}  # , 'spacing': 'proportional'}
+            cbar_kwargs = {'format': '%.2f', 'aspect': 50, 'label': ''}  # , 'spacing': 'proportional'}
             label_add = r'Adjusted $R^2$'
             plt_kwargs.update({'cmap': 'viridis', 'figsize': (15, 10),
                                'yincrease': False, 'levels': 41, 'vmin': 0.0,
