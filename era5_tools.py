@@ -29,7 +29,7 @@ def transform_model_levels_to_pressure(path, field_da, plevel=85.0, mm=True):
     from aux_functions_strat import dim_intersection
     import numpy as np
     if mm:
-        pf = xr.open_dataset(path / 'era5_full_pressure_mm_1979-2018.nc')
+        pf = xr.open_dataset(path / 'era5_full_pressure_mm_1979-2019.nc')
     pf = pf.pf
     levels = dim_intersection([pf, field_da], dropna=False, dim='level')
     pf = pf.sel(level=levels)
@@ -74,13 +74,15 @@ def create_model_levels_map_from_surface_pressure(work_path):
     a = ds.a.values
     b = ds.b.values
     n = ds.n.values
-    sp = xr.open_dataset(work_path / 'era5_SP_mm_1979-2018.nc')
+    sp = xr.open_dataset(work_path / 'era5_SP_mm_1979-2019.nc')
+    # convert to hPa:
     sp = sp.sp / 100.0
     pf = np.zeros((sp.time.size, sp.latitude.size, sp.longitude.size, len(a)),
                   'float32')
     sp_np = sp.values
     for t in range(sp.time.size):
-        print(t)
+        record = sp.time.isel({'time': t})
+        print('processing # record {} ({})'.format(t, record.dt.strftime('%Y-%m')))
         for lat in range(sp.latitude.size):
             for lon in range(sp.longitude.size):
                 ps = sp_np[t, lat, lon]
@@ -98,7 +100,7 @@ def create_model_levels_map_from_surface_pressure(work_path):
     pf_ds['time'] = sp.time
     comp = dict(zlib=True, complevel=9)  # best compression
     encoding = {var: comp for var in pf_ds.data_vars}
-    pf_ds.to_netcdf(work_path / 'era5_full_pressure_mm_1979-2018.nc',
+    pf_ds.to_netcdf(work_path / 'era5_full_pressure_mm_1979-2019.nc',
                     encoding=encoding)
     return pf_ds
 
