@@ -445,20 +445,16 @@ def _produce_T500_from_era5(loadpath, savepath=None):
     weighted means sel"""
     # import os
     import xarray as xr
-    import numpy as np
-    from pathlib import Path
-    t500 = xr.open_dataarray(loadpath / 'ERA5_T_eq_all.nc')
-    t500 = t500.to_dataset(name='t500')
+    from aux_functions_strat import lat_mean
+    from aux_functions_strat import xr_rename_sort
+    t500 = xr.open_dataarray(loadpath / 'era5_t500_mm_1979-2019.nc')
+    t500 = xr_rename_sort(t500)
     t500 = t500.mean('lon')
-    t500 = t500.sel(level=500)
-    t500['cos_lat'] = np.cos(np.deg2rad(t500['lat']))
-    t500['mean'] = ((t500.cos_lat * t500.t500).sum('lat', keep_attrs=True) /
-                    (t500.cos_lat.sum('lat', keep_attrs=True)))
-    T500 = t500['mean']
+    t500 = lat_mean(t500.sel(lat=slice(-20, 20)))
     if savepath is not None:
-        T500.to_netcdf(savepath / 'era5_t500_index.nc')
+        t500.to_netcdf(savepath / 'era5_t500_index.nc')
         print_saved_file('era5_t500_index.nc', savepath)
-    return T500
+    return t500
 
 
 def _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='singapore',
