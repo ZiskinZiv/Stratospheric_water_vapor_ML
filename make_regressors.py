@@ -854,10 +854,21 @@ def _download_singapore_qbo(path=None, filename='singapore_qbo.nc'):
 
 
 def _produce_BDC(loadpath, savepath=None):
-    from era5_tools import proccess_era5_fields
-    bdc = proccess_era5_fields(path=loadpath, pre_names='MTTPM_54',
-                               post_name='bdc_index', mean=True,
-                               savepath=savepath)
+#    from era5_tools import proccess_era5_fields
+#    bdc = proccess_era5_fields(path=loadpath, pre_names='MTTPM_54',
+#                               post_name='bdc_index', mean=True,
+#                               savepath=savepath)
+    from aux_functions_strat import path_glob
+    from aux_functions_strat import lat_mean
+    import xarray as xr
+    file = path_glob(loadpath, 'era5_mttpm_70hPa.nc')[0]
+    da = xr.load_dataarray(file)
+    bdc = lat_mean(da.sel(lat=slice(-5, 5)))
+    bdc = bdc.mean('lon', keep_attrs=True)
+    filename = 'era5_bdc_index.nc'
+    if savepath is not None:
+        bdc.to_netcdf(savepath / filename, 'w')
+        print_saved_file(filename, savepath)
     return bdc
 
 
