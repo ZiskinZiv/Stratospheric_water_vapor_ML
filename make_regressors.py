@@ -440,9 +440,7 @@ def _produce_OLR(loadpath, savepath=None):
 
 
 def _produce_T500_from_era5(loadpath, savepath=None):
-    """takes a 500 hpa [16 index on level var] from merra gcm temperature and
-    slices -20 to 20 deg lat saves it to file. retures 4 time-series for each
-    weighted means sel"""
+    """  """
     # import os
     import xarray as xr
     from aux_functions_strat import lat_mean
@@ -860,7 +858,7 @@ def _produce_BDC(loadpath, savepath=None):
     file = path_glob(loadpath, 'era5_mttpm_70hPa.nc')[0]
     da = xr.load_dataarray(file)
     bdc = lat_mean(da.sel(lat=slice(-5, 5)))
-    bdc = bdc.mean('lon', keep_attrs=True)
+    bdc = bdc.mean('lon', keep_attrs=True).squeeze(drop=True)
     filename = 'era5_bdc_index.nc'
     if savepath is not None:
         bdc.to_netcdf(savepath / filename, 'w')
