@@ -35,7 +35,7 @@ class Parameters:
                  add_poly_reg=None,
                  data_name='swoosh',
                  species='h2o',
-                 time_period=['1994', '2018'],
+                 time_period=['1994', '2019'],
                  area_mean=False,
                  lat_slice=[-20, 20],
                  plevels=None,
@@ -218,7 +218,7 @@ class ML_Switcher(object):
 
 def run_level_month_shift(plags=['qbo_cdas'],
                           lslice=[-20, 20],
-                          time_period=['1984', '2018'], lag_period=[0, 12],
+                          time_period=['1984', '2019'], lag_period=[0, 12],
                           species=None):
     print('producing level month shift for {} regressors'.format(plags))
     print('time period: {} to {}'.format(*time_period))
@@ -231,11 +231,11 @@ def run_level_month_shift(plags=['qbo_cdas'],
     elif species == 't':
         rds = run_ML(time_period=time_period, species='t', area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
-                     regressors=plags, original_data_file='era5_t_85hPa.nc')
+                     regressors=plags, data_file='era5_t_85hPa.nc')
     elif species == 'u':
         rds = run_ML(time_period=time_period, species='u', area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
-                     regressors=plags, original_data_file='era5_u_85hPa.nc')
+                     regressors=plags, data_file='era5_u_85hPa.nc')
     return rds.level_month_shift
 
 
@@ -249,7 +249,7 @@ def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
     import xarray as xr
     seasons = ['JJA', 'SON', 'DJF', 'MAM']
     # first do level months reg shift for plags:
-    rds = run_ML(time_period=['1984', '2018'], area_mean=True,
+    rds = run_ML(time_period=['1984', '2019'], area_mean=True,
                  lat_slice=[-20, 20], special_run={'optimize_reg_shift': [0, 12]},
                  regressors=plags)
     lms = rds.level_month_shift
@@ -616,7 +616,7 @@ def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None):
 
 def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            ml_params=None, area_mean=False, RI_proc=False,
-           poly_features=None, time_period=['1994', '2018'], cv=None,
+           poly_features=None, time_period=['1994', '2019'], cv=None,
            regressors=['era5_qbo_1', 'era5_qbo_2', 'ch4', 'radio_cold_no_qbo'],
            reg_time_shift=None, season=None, add_poly_reg=None, lms=None,
            special_run=None, gridsearch=False, plevels=None,
@@ -1442,7 +1442,7 @@ def regressor_shift(time_series_da, time_dim='time', shifts=[1, 12],
 
 
 def correlate_da_with_lag(return_max=None, return_argmax=None,
-                          times=['1994', '2018'], lat_slice=[-60, 60],
+                          times=['1994', '2019'], lat_slice=[-60, 60],
                           regress_out=['qbo_1, qbo_2'], max_lag=25):
     from strato_soundings import calc_cold_point_from_sounding
     from sklearn.linear_model import LinearRegression
@@ -2716,12 +2716,13 @@ class TargetArray(Dataset):
         return self
 
     def do_area_mean(self):
-        from aux_functions_strat import xr_weighted_mean
         from aux_functions_strat import lat_mean
         to_update = self.__dict__
         if self.verbose:
             print('selecting data area mean')
-        self = xr_weighted_mean(self)
+        self = lat_mean(self)
+        if 'lon' in self.dims:
+            self = self.mean('lon', keep_attrs=True)
         self.__dict__.update(to_update)
         self.area_mean = True
         return self
