@@ -182,7 +182,7 @@ def plot_figure_1(path=work_chaim, regressors=['qbo_cdas']):
     # sns.set_style('ticks', rc=rc)
     cbar_kws = {'label': '', 'format': '%0.2f', 'aspect': 50}
     if len(regressors) == 1:
-        rds = run_ML(time_period=['1984', '2018'], regressors=regressors,
+        rds = run_ML(time_period=['1984', '2019'], regressors=regressors,
                      special_run={'optimize_reg_shift': [0, 12]},
                      area_mean=True, lat_slice=[-20, 20])
         fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
@@ -241,7 +241,7 @@ def plot_figure_2(path=work_chaim, robust=False):
     import xarray as xr
     rds = xr.open_dataset(
         path /
-        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
+        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2019.nc')
     fg = plot_like_results(rds, plot_key='predict_level-time', lat=None,
                            cmap=predict_cmap, robust=robust, extend=None,
                            no_colorbar=True)
@@ -274,7 +274,7 @@ def plot_figure_3(path=work_chaim):
     import xarray as xr
     rds = xr.open_dataset(
         path /
-        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
+        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2019.nc')
     fg = plot_like_results(rds, plot_key='r2_level-lat', cmap=error_cmap,
                            extend=None, add_colorbar=True)
     fg.ax.set_title('')
@@ -295,7 +295,7 @@ def plot_figure_4(path=work_chaim):
     import xarray as xr
     rds = xr.open_dataset(
         path /
-        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2018.nc')
+        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2019.nc')
     fg = plot_like_results(rds, plot_key='params_level-lat', cmap=predict_cmap,
                            figsize=(10, 5), extend=None, no_colorbar=True)
     fg.fig.suptitle('')
@@ -376,7 +376,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
 
 
 def plot_figure_5(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lat', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -385,7 +385,7 @@ def plot_figure_5(path=work_chaim):
 
 
 def plot_figure_6(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lon', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -434,7 +434,7 @@ def plot_figure_seasons(ncfile, path=work_chaim, field='params', level=82):
 
 
 def plot_figure_7(path=work_chaim):
-    ncfile = 'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2018.nc'
+    ncfile = 'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2019.nc'
     fg = plot_figure_seasons(ncfile, path, field='params')
     print('Caption: ')
     print('The beta coefficients for the water vapor MLR season analysis for pressure levels vs. latitude with  CH4, ENSO  pressure level lag varied QBO as predictors. This MLR analysis spanned from 1984 to 2018. Note that ENSO is dominant in the MAM season')  
@@ -442,7 +442,7 @@ def plot_figure_7(path=work_chaim):
 
 
 def plot_figure_8(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lat', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -451,7 +451,7 @@ def plot_figure_8(path=work_chaim):
 
 
 def plot_figure_9(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lon', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -460,7 +460,7 @@ def plot_figure_9(path=work_chaim):
 
 
 def plot_figure_10(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_t500_bdc_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_bdc_t500_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lat', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -469,7 +469,7 @@ def plot_figure_10(path=work_chaim):
 
 
 def plot_figure_11(path=work_chaim):
-    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_t500_bdc_2004-2018.nc'
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_bdc_t500_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lon', level=82.54,
                              bust_lines=True, save=True)
     print('Caption: ')
@@ -486,7 +486,7 @@ def plot_figure_12(path=work_chaim, rds=None, save=True):
     if rds is None:
         rds = xr.open_dataset(
                 path /
-                'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+                'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
     rds = rds['r2_adj'].sel(level=82, method='nearest')
     fig = plt.figure(figsize=(11, 5))
     ax = fig.add_subplot(1, 1, 1,
@@ -542,7 +542,7 @@ def plot_figure_13(path=work_chaim, rds=None, save=True):
     if rds is None:
         rds = xr.open_dataset(
             path /
-            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
     rds = rds['params'].sel(level=82, method='nearest')
     proj = ccrs.PlateCarree(central_longitude=0)
 #    fig, axes = plt.subplots(1, 3, figsize=(17, 3.0),
@@ -653,19 +653,19 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
     if species == 'H2O':
         rds = xr.open_dataset(
             path /
-            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2018.nc')
+            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
         level = 82
         unit = 'ppmv'
     elif species == 't':
         rds = xr.open_dataset(
             path /
-            'MLR_t_85hpa_latlon_cdas-plags_ch4_enso_1984-2018.nc')
+            'MLR_t_85hpa_latlon_cdas-plags_ch4_enso_1984-2019.nc')
         level = 85
         unit = 'K'
     elif species == 'u':
         rds = xr.open_dataset(
             path /
-            'MLR_u_85hpa_latlon_cdas-plags_ch4_enso_1984-2018.nc')
+            'MLR_u_85hpa_latlon_cdas-plags_ch4_enso_1984-2019.nc')
         level = 85
         unit = r'm$\cdot$sec$^{-1}$'
     if time is None:
