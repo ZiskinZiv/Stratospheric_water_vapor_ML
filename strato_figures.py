@@ -130,7 +130,9 @@ def remove_regressors_and_set_title(ax, set_title_only=None):
                     'anom_nino3p4': 'ENSO',
                     'ch4': 'CH4',
                     'era5_bdc': 'BDC',
-                    'era5_t500': 'T at 500hPa'}
+                    'era5_t500': 'T at 500hPa',
+                    'anom_nino3p4^2': r'ENSO$^2$',
+                    'anom_nino3p4*q...': 'ENSO*QBO'}
     title = ax.get_title()
     title = title.split('=')[-1].strip(' ')
     if set_title_only is not None:
@@ -251,7 +253,7 @@ def plot_figure_2(path=work_chaim, robust=False):
     # remove time from xlabel:
     bottom_ax.set_xlabel('')
     # new ticks:
-    bottom_ax = change_xticks_years(bottom_ax, start=1985, end=2018)
+    bottom_ax = change_xticks_years(bottom_ax, start=1985, end=2019)
     top_ax.set_title(
         r'Area-averaged (weighted by cosine of latitudes 60$\degree$S to 60$\degree$N) combined water vapor anomaly')
     mid_ax.set_title('MLR reconstruction')
@@ -352,7 +354,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
     # remove time from xlabel:
     bottom_ax.set_xlabel('')
     # new ticks:
-    bottom_ax = change_xticks_years(bottom_ax, start=st_year, end=2018)
+    bottom_ax = change_xticks_years(bottom_ax, start=st_year, end=2019)
     top_ax.set_title(geo_title.get(geo))
     mid_ax.set_title('MLR reconstruction')
     bottom_ax.set_title('Residuals')
@@ -370,7 +372,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
     fg.fig.tight_layout()
     fg.fig.subplots_adjust(left=0.05, bottom=0.14)
     if save:
-        filename = 'MLR_{}_predict_{}-time_{}_{}_{}-2018.png'.format(species, geo, math.floor(level), regs, st_year)
+        filename = 'MLR_{}_predict_{}-time_{}_{}_{}-2019.png'.format(species, geo, math.floor(level), regs, st_year)
         fg.fig.savefig(savefig_path / filename , bbox_inches='tight')
     return fg
 
@@ -393,7 +395,7 @@ def plot_figure_6(path=work_chaim):
     return fg
 
 
-def plot_figure_seasons(ncfile, path=work_chaim, field='params', level=82):
+def plot_figure_seasons(ncfile, path=work_chaim, field='params'):
     import xarray as xr
     rds = xr.open_dataset(path / ncfile)
     species = ncfile.split('.')[0].split('_')[1]
@@ -413,7 +415,7 @@ def plot_figure_seasons(ncfile, path=work_chaim, field='params', level=82):
                   'add_colorbar': False,
                   'extend': None, 'yscale': 'log',
                   'yincrease': False, 'center': 0.0, 'levels': 41}
-    data = rds[field].sel(level=level, method='nearest')
+    data = rds[field]
     fg = data.plot.contourf(
         col='regressors', row='season', **plt_kwargs)
     fg = add_horizontal_colorbar(fg, [0.1, 0.065, 0.8, 0.015], cbar_kwargs_dict={'label': unit})
@@ -534,29 +536,32 @@ def plot_figure_12(path=work_chaim, rds=None, save=True):
     return fg
 
 
-def plot_figure_13(path=work_chaim, rds=None, save=True):
-    """params map (lat-lon) for cdas-plags, enso, ch4"""
+def plot_feature_map(ncfile, path=work_chaim, rds=None, feature='params',
+                     level=82, col_wrap=3, figsize=(17, 3), extent=[-170, 170, -57.5, 57.5]):
     import xarray as xr
     import cartopy.crs as ccrs
     from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
     if rds is None:
-        rds = xr.open_dataset(
-            path /
-            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
-    rds = rds['params'].sel(level=82, method='nearest')
+        species = ncfile.split('.')[0].split('_')[1]
+        regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
+        rds = xr.load_dataset(path / ncfile)
+    else:
+        species = ''
+        regs = ''
+    rds = rds[feature].sel(level=level, method='nearest')
     proj = ccrs.PlateCarree(central_longitude=0)
-#    fig, axes = plt.subplots(1, 3, figsize=(17, 3.0),
-#                             subplot_kw=dict(projection=proj))
     gl_list = []
     fg = rds.plot.contourf(col='regressors', add_colorbar=False,
+                           col_wrap=col_wrap,
                            cmap=predict_cmap, center=0.0, extend=None,
                            levels=41, subplot_kws=dict(projection=proj),
-                           transform=ccrs.PlateCarree(), figsize=(17, 3))
+                           transform=ccrs.PlateCarree(), figsize=figsize)
     cbar_kws = {'label': '', 'format': '%0.2f'}
     cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])  # last num controls width
     fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
     for ax in fg.axes.flatten():
         ax.coastlines()
+        ax.set_extent(extent, crs=ccrs.PlateCarree())
         gl = ax.gridlines(
             crs=ccrs.PlateCarree(),
             linewidth=1,
@@ -576,14 +581,75 @@ def plot_figure_13(path=work_chaim, rds=None, save=True):
         ax = remove_regressors_and_set_title(ax)
     gl_list[0].ylabels_right = False
     gl_list[2].ylabels_left = False
+    try:
+        gl_list[3].ylabels_right = False
+    except IndexError:
+        pass
     fg.fig.tight_layout()
     fg.fig.subplots_adjust(right=0.96, left=0.04, wspace=0.15)
-    print('Caption: ')
-    print('The beta coeffciants for the water vapor anomalies MLR analysis in the 82 hPa level at 2004 to 2018')
-    filename = 'MLR_H2O_params_map_82_cdas-plags_ch4_enso.png'
-    if save:
-        plt.savefig(savefig_path / filename, bbox_inches='tight')
+#    print('Caption: ')
+#    print('The beta coeffciants for the water vapor anomalies MLR analysis in the 82 hPa level at 2004 to 2018')
+    filename = 'MLR_{}_{}_map_{}_{}.png'.format(species, feature, level, regs)
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
+
+
+def plot_figure_13(path=work_chaim):
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc'
+    fg = plot_feature_map(ncfile, path=path, feature='params', level=82)
+    return fg
+
+
+#def plot_figure_13(path=work_chaim, rds=None, save=True):
+#    """params map (lat-lon) for cdas-plags, enso, ch4"""
+#    import xarray as xr
+#    import cartopy.crs as ccrs
+#    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+#    if rds is None:
+#        rds = xr.open_dataset(
+#            path /
+#            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
+#    rds = rds['params'].sel(level=82, method='nearest')
+#    proj = ccrs.PlateCarree(central_longitude=0)
+##    fig, axes = plt.subplots(1, 3, figsize=(17, 3.0),
+##                             subplot_kw=dict(projection=proj))
+#    gl_list = []
+#    fg = rds.plot.contourf(col='regressors', add_colorbar=False,
+#                           cmap=predict_cmap, center=0.0, extend=None,
+#                           levels=41, subplot_kws=dict(projection=proj),
+#                           transform=ccrs.PlateCarree(), figsize=(17, 3))
+#    cbar_kws = {'label': '', 'format': '%0.2f'}
+#    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])  # last num controls width
+#    fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+#    for ax in fg.axes.flatten():
+#        ax.coastlines()
+#        gl = ax.gridlines(
+#            crs=ccrs.PlateCarree(),
+#            linewidth=1,
+#            color='black',
+#            alpha=0.5,
+#            linestyle='--',
+#            draw_labels=True)
+#        gl.xlabels_top = False
+#        gl.xlabel_style = {'size': 9}
+#        gl.ylabel_style = {'size': 9}
+#        gl.xlines = True
+#        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+#        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+#        gl.xformatter = LONGITUDE_FORMATTER
+#        gl.yformatter = LATITUDE_FORMATTER
+#        gl_list.append(gl)
+#        ax = remove_regressors_and_set_title(ax)
+#    gl_list[0].ylabels_right = False
+#    gl_list[2].ylabels_left = False
+#    fg.fig.tight_layout()
+#    fg.fig.subplots_adjust(right=0.96, left=0.04, wspace=0.15)
+#    print('Caption: ')
+#    print('The beta coeffciants for the water vapor anomalies MLR analysis in the 82 hPa level at 2004 to 2018')
+#    filename = 'MLR_H2O_params_map_82_cdas-plags_ch4_enso.png'
+#    if save:
+#        plt.savefig(savefig_path / filename, bbox_inches='tight')
+#    return fg
 
 
 def plot_figure_seasons_map(path=work_chaim, rds=None, field='r2_adj', level=82,
@@ -887,4 +953,35 @@ def plot_figure_28(path=work_chaim):
                                            time_mean='season', save=True)
     print('Caption: ')
     print('Seasonal zonal wind anomalies predictor response maps for the 85 hPa level in 2010')
+    return fg
+
+
+def plot_figure_poly2_lat(path=work_chaim):
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc'
+    fg = plot_latlon_predict(ncfile, path=path, geo='lat', level=82.54,
+                             bust_lines=True, save=True)
+
+
+def plot_figure_poly2_lon(path=work_chaim):
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc'
+    fg = plot_latlon_predict(ncfile, path=path, geo='lon', level=82.54,
+                             bust_lines=True, save=True)
+    
+def plot_figure_poly2_params(path=work_chaim):
+    ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc'
+    fg = plot_feature_map(
+        ncfile,
+        path=path,
+        feature='params',
+        level=82,
+        col_wrap=3,
+        figsize=(
+            15,
+            5))
+    plt.subplots_adjust(top=1.0,
+                        bottom=0.101,
+                        left=0.051,
+                        right=0.955,
+                        hspace=0.0,
+                        wspace=0.21)
     return fg
