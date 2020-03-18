@@ -2092,7 +2092,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt.show()
                 return fg
         elif key == 'response':
-            label_add = data.attrs['long_name'] + ' response'
+            try:
+                label_add = data.attrs['long_name'] + ' response'
+            except KeyError:
+                label_add = '{} response'.format(data.name)
             plt_kwargs.update({'cmap': 'bwr', 'figsize': (15, 10),
                                'add_colorbar': False, 'levels': 41,
                                'extend': 'both'})
@@ -2101,7 +2104,10 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                     label_add += ' at level= {:.2f} hPa'.format(p.level)
                 else:
                     raise Exception('pls pick a level for this plot')
-                units = data.attrs['units']
+                try:
+                    units = data.attrs['units']
+                except KeyError:
+                    units = ''
                 plt_kwargs.update({'center': 0.0, 'levels': 41})
                 plt_kwargs.update(kwargs)
                 if p.time is not None and p.time_mean is not None:
