@@ -132,7 +132,7 @@ def remove_regressors_and_set_title(ax, set_title_only=None):
                     'era5_bdc': 'BDC',
                     'era5_t500': 'T at 500hPa',
                     'anom_nino3p4^2': r'ENSO$^2$',
-                    'anom_nino3p4*q...': 'ENSO*QBO'}
+                    'anom_nino3p4*q...': r'ENSO $\times$ QBO'}
     title = ax.get_title()
     title = title.split('=')[-1].strip(' ')
     if set_title_only is not None:
