@@ -1700,12 +1700,16 @@ class Plot_type:
 
     def parse_time_mean(self, rds):
         if self.time_mean is not None:
-            grp = self.time_dim + '.' + self.time_mean
-            attrs = rds.attrs
-            data = rds.groupby(grp).mean(self.time_dim)
-            for key, value in attrs.items():
-                data.attrs[key] = value
-            return data
+            if not self.time_mean:
+                grp = self.time_dim + '.' + self.time_mean
+                attrs = rds.attrs
+                data = rds.groupby(grp).mean(self.time_dim)
+                for key, value in attrs.items():
+                    data.attrs[key] = value
+                return data
+            else:
+                data = rds.mean(self.time_dim, keep_attrs=True)
+                return data
         elif self.time_mean is None and rds[self.time_dim].size > 5 and self.plot_map:
             raise Exception('pls pick time_mean(e.g., season) for sample plots with times biggger than 3')
         else:
@@ -1913,10 +1917,14 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt_kwargs.update({'yscale': 'linear', 'yincrease': True})
                 plt_kwargs.update(kwargs)
                 if p.time is not None and p.time_mean is not None:
+                    if p.time_mean:
+                        row = None
+                    else:
+                        row = p.time_mean
                     # rds = p.parse_coord(rds, 'time')
                     label_add += ', for times {} to {}'.format(p.time[0],
                                                                p.time[1])
-                    fg = data.plot.contourf(row=p.time_mean, col='opr',
+                    fg = data.plot.contourf(row=row, col='opr',
                                             **plt_kwargs)
                 elif p.time is not None and p.time_mean is None:
                     label_add += ', for times {} to {}'.format(p.time[0],
@@ -2111,10 +2119,14 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                 plt_kwargs.update({'center': 0.0, 'levels': 41})
                 plt_kwargs.update(kwargs)
                 if p.time is not None and p.time_mean is not None:
+                    if p.time_mean:
+                        row = None
+                    else:
+                        row = p.time_mean
                     # rds = p.parse_coord(rds, 'time')
                     label_add += ', for times {} to {}'.format(p.time[0],
                                                                p.time[1])
-                    fg = data.plot.contourf(row=p.time_mean, col='regressors',
+                    fg = data.plot.contourf(row=row, col='regressors',
                                             **plt_kwargs)
                 elif p.time is not None and p.time_mean is None:
                     label_add += ', for times {} to {}'.format(p.time[0],
