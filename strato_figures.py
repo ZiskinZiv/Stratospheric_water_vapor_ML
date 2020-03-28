@@ -132,7 +132,11 @@ def remove_regressors_and_set_title(ax, set_title_only=None):
                     'era5_bdc': 'BDC',
                     'era5_t500': 'T at 500hPa',
                     'anom_nino3p4^2': r'ENSO$^2$',
-                    'anom_nino3p4*q...': r'ENSO $\times$ QBO'}
+                    'anom_nino3p4*q...': r'ENSO $\times$ QBO',
+                    '1': r'(QBO + ENSO + CH4) = $\eta_1$',
+                    '2': r'$\eta_1$ + T500 + BDC',
+                    '3': r'$\eta_1$ + $\sum^6_{i=0}$CPT(t-$i$)',
+                    '4': r'$\eta_1$ + QBO $\times$ ENSO + ENSO$^2$'}
     title = ax.get_title()
     title = title.split('=')[-1].strip(' ')
     if set_title_only is not None:
@@ -395,7 +399,8 @@ def plot_figure_6(path=work_chaim):
     return fg
 
 
-def plot_figure_seasons(ncfile, path=work_chaim, field='params'):
+def plot_figure_seasons(ncfile, path=work_chaim, field='params', reduce=None,
+                        plot_kwargs=None):
     import xarray as xr
     rds = xr.open_dataset(path / ncfile)
     species = ncfile.split('.')[0].split('_')[1]
@@ -411,10 +416,14 @@ def plot_figure_seasons(ncfile, path=work_chaim, field='params'):
     syear = ncfile.split('.')[0].split('_')[-1].split('-')[0]
     eyear = ncfile.split('.')[0].split('_')[-1].split('-')[-1]
     rds = rds.sortby('season')
+    if reduce is not None:
+        rds = rds.mean(reduce, keep_attrs=True)
     plt_kwargs = {'cmap': predict_cmap, 'figsize': (15, 10),
                   'add_colorbar': False,
                   'extend': None, 'yscale': 'log',
                   'yincrease': False, 'center': 0.0, 'levels': 41}
+    if plot_kwargs is not None:
+        plt_kwargs.update(plot_kwargs)
     data = rds[field]
     fg = data.plot.contourf(
         col='regressors', row='season', **plt_kwargs)
@@ -479,24 +488,36 @@ def plot_figure_11(path=work_chaim):
     return fg
 
 
-def plot_figure_12(path=work_chaim, rds=None, save=True):
+def plot_r2_map_predictor_sets(path=work_chaim, save=True):
     """r2 map (lat-lon) for cdas-plags, enso, ch4"""
     import xarray as xr
     import cartopy.crs as ccrs
     import numpy as np
     from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
-    if rds is None:
-        rds = xr.open_dataset(
+    rds1 = xr.open_dataset(
                 path /
                 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
-    rds = rds['r2_adj'].sel(level=82, method='nearest')
-    fig = plt.figure(figsize=(11, 5))
-    ax = fig.add_subplot(1, 1, 1,
-                         projection=ccrs.PlateCarree(central_longitude=0))
-    ax.coastlines()
-    fg = rds.plot.contourf(ax=ax, add_colorbar=False, cmap=error_cmap,
-                           vmin=0.0, extend=None, levels=21)
-    ax.set_title('')
+    rds2 = xr.open_dataset(
+            path /
+            'MLR_H2O_latlon_cdas-plags_ch4_enso_bdc_t500_2004-2019.nc')
+    rds3 = xr.open_dataset(
+            path /
+            'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2019.nc')
+    rds4 = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc')
+    rds = xr.concat([x['r2_adj'].sel(level=82, method='nearest') for x in [rds1, rds2, rds3, rds4]], 'eta')
+    rds['eta'] = range(1, 5)
+    rds = rds.sortby('eta')
+#    fig = plt.figure(figsize=(11, 5))
+#    ax = fig.add_subplot(1, 1, 1,
+#                         projection=ccrs.PlateCarree(central_longitude=0))
+#    ax.coastlines()
+    proj = ccrs.PlateCarree(central_longitude=0)
+    fg = rds.plot.contourf(col='eta', add_colorbar=False, cmap=error_cmap,
+                           vmin=0.0, extend=None, levels=21, col_wrap=2,
+                           subplot_kws=dict(projection=proj),
+                           transform=ccrs.PlateCarree(), figsize=(11, 5))
 #    lons = rds.lon.values[0:int(len(rds.lon.values) / 2)][::2]
 #    lons_mirror = abs(lons[::-1])
 #    lons = np.concatenate([lons, lons_mirror])
@@ -509,28 +530,45 @@ def plot_figure_12(path=work_chaim, rds=None, save=True):
     # lat_formatter = LatitudeFormatter()
     # ax.xaxis.set_major_formatter(lon_formatter)
     # ax.yaxis.set_major_formatter(lat_formatter)
-    cbar_kws = {'label': '', 'format': '%0.2f'}
-    cbar_ax = fg.ax.figure.add_axes([0.1, 0.1, .8, .035])
-    plt.colorbar(fg, cax=cbar_ax, orientation="horizontal", **cbar_kws)
-    gl = ax.gridlines(
-        crs=ccrs.PlateCarree(),
-        linewidth=1,
-        color='black',
-        alpha=0.5,
-        linestyle='--',
-        draw_labels=True)
-    gl.xlines = True
-    gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
-    gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30 ,45])
-    gl.xlabel_style = {'size': 10}
-    gl.ylabel_style = {'size': 10}
-    gl.xformatter = LONGITUDE_FORMATTER
-    gl.yformatter = LATITUDE_FORMATTER
-    fig.tight_layout()
-    fig.subplots_adjust(top=0.98,left=0.06, right=0.94)
+    cbar_kws = {'label': '', 'format': '%0.2f', 'aspect': 20}
+    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])  # last num controls width
+    fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    gl_list = []
+    for ax in fg.axes.flatten():
+        ax.coastlines()
+        gl = ax.gridlines(
+            crs=ccrs.PlateCarree(),
+            linewidth=1,
+            color='black',
+            alpha=0.5,
+            linestyle='--',
+            draw_labels=True)
+        gl.xlabels_top = False
+        gl.xlabel_style = {'size': 9}
+        gl.ylabel_style = {'size': 9}
+        gl.xlines = True
+        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        gl_list.append(gl)
+        ax = remove_regressors_and_set_title(ax)
+    # gl_list[0].ylabels_right = False
+    # gl_list[2].ylabels_left = False
+#    try:
+#        gl_list[3].ylabels_right = False
+#    except IndexError:
+#        pass
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(top=0.99,
+                           bottom=0.16,
+                           left=0.065,
+                           right=0.935,
+                           hspace=0.0,
+                           wspace=0.288)
     print('Caption: ')
     print('The adjusted R^2 for the water vapor anomalies MLR analysis in the 82 hPa level with CH4 ,ENSO, and pressure level lag varied QBO as predictors. This MLR spans from 2004 to 2018')
-    filename = 'MLR_H2O_r2_map_82_cdas-plags_ch4_enso.png'
+    filename = 'MLR_H2O_r2_map_82_eta.png'
     if save:
         plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
@@ -703,10 +741,12 @@ def plot_figure_seasons_map(path=work_chaim, rds=None, field='r2_adj', level=82,
     return fg
 
 
-def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
+def plot_figure_response_predict_maps(path=work_chaim, ncfile=None,
+                                      species='H2O',
                                       field='response', bust='2010D-2011JFM',
                                       time_mean=None, time=None, 
-                                      proj_key='PlateCarree', save=True):
+                                      proj_key='PlateCarree',
+                                      plot_kwargs=None, save=True):
     """response/predict maps (lat-lon) for cdas-plags, enso, ch4 for 2010D-2011JFM bust"""
     import xarray as xr
     import cartopy.crs as ccrs
@@ -717,21 +757,21 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
                  '2016OND': ['2016-10', '2016-12']}
     col_dict = {'response': 'regressors', 'predict': 'opr'}
     if species == 'H2O':
-        rds = xr.open_dataset(
-            path /
-            'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
+        if ncfile is None:
+            ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc'
+        rds = xr.open_dataset(path / ncfile)
         level = 82
         unit = 'ppmv'
     elif species == 't':
-        rds = xr.open_dataset(
-            path /
-            'MLR_t_85hpa_latlon_cdas-plags_ch4_enso_1984-2019.nc')
+        if ncfile is None:
+            ncfile = 'MLR_t_85hpa_latlon_cdas-plags_ch4_enso_1984-2019.nc'
+        rds = xr.open_dataset(path / ncfile)
         level = 85
         unit = 'K'
     elif species == 'u':
-        rds = xr.open_dataset(
-            path /
-            'MLR_u_85hpa_latlon_cdas-plags_ch4_enso_1984-2019.nc')
+        if ncfile is None:
+            ncfile = 'MLR_u_85hpa_latlon_cdas-plags_ch4_enso_1984-2019.nc'
+        rds = xr.open_dataset(path / ncfile)
         level = 85
         unit = r'm$\cdot$sec$^{-1}$'
     if time is None:
@@ -741,6 +781,8 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
     rds = fg.data.sel(lat=slice(-60, 60))
     if time_mean == 'season':
         size = 4
+    elif time_mean:
+        size = 3
     else:
         size = rds.time.size
     if size == 4:
@@ -762,24 +804,32 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
                         right=0.97,
                         hspace=0.03,
                         wspace=0.18)
-        rect = [0.1, 0.06, 0.8, 0.015]
+        rect = [0.1, 0.1, 0.8, 0.015]
         i_label = 6
     proj = getattr(ccrs, proj_key)(central_longitude=0.0)
     if time_mean is not None:
-        row = time_mean
+        if time_mean == 'season':
+            row = 'season'
+        elif time_mean:
+            row = None
     else:
         row = 'time'
+    plt_kwargs = {'add_colorbar': False, 'col_wrap': 3, 'center': 0, 'extend': None,
+                  'cmap': predict_cmap, 'levels': 41, 'figsize': figsize}
+    if plot_kwargs is not None:
+        plt_kwargs.update(plot_kwargs)
     fg = rds.plot.contourf(col=col_dict.get(field), row=row,
-                           add_colorbar=False,
-                           cmap=predict_cmap, center=0.0, extend=None,
-                           levels=41, subplot_kws={'projection': proj},
-                           transform=ccrs.PlateCarree(), figsize=figsize)
+                           subplot_kws={'projection': proj},
+                           transform=ccrs.PlateCarree(),
+                           **plt_kwargs)
     fg = add_horizontal_colorbar(
         fg, rect=rect, cbar_kwargs_dict={
             'label': unit})
+    extent=[-170, 170, -57.5, 57.5]
     for i, ax in enumerate(fg.axes.flatten()):
         ax.coastlines(resolution='110m')
         if proj_key == 'PlateCarree':
+            ax.set_extent(extent, crs=ccrs.PlateCarree())
             gl = ax.gridlines(crs=ccrs.PlateCarree(),
                               linewidth=1,
                               color='black',
@@ -788,8 +838,8 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
                               draw_labels=True)
             gl.xlabels_top = False
             gl.ylabels_right = False
-            if i < i_label:
-                gl.xlabels_bottom = False
+            # if i < i_label:
+            #     gl.xlabels_bottom = False
             gl.xlabel_style = {'size': 9}
             gl.ylabel_style = {'size': 9}
             gl.xlines = True
@@ -815,10 +865,9 @@ def plot_figure_response_predict_maps(path=work_chaim, species='H2O',
     fg.fig.subplots_adjust(**s_adjust)
     if time is not None and time_mean == 'season':
         bust = '{}_seasons'.format(time)
-    filename = 'MLR_{}_{}_map_{}_cdas-plags_ch4_enso_{}.png'.format(species,
-                                                                    field,
-                                                                    level,
-                                                                    bust)
+    regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
+    filename = 'MLR_{}_{}_map_{}_{}_{}.png'.format(species, field, level, regs,
+                                                   bust)
     if save:
         fg.fig.savefig(savefig_path / filename, bbox_inches='tight', orientation='landscape')
     return fg
@@ -859,6 +908,20 @@ def plot_figure_17(path=work_chaim):
     return fg
 
 
+def plot_figure_17_1(path=work_chaim):
+    fg = plot_figure_response_predict_maps(
+        path,
+        species='H2O',
+        time_mean=True,
+        ncfile='MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc',
+        field='response',
+        bust='2015OND', plot_kwargs={'figsize': (13.5, 5.4)},
+        save=True)
+    print('Caption: ')
+    print('The water vapor anomalies predictor response map for the 82.54 hPa level in the 2015-OND forecast bust.')
+    return fg
+
+
 def plot_figure_18(path=work_chaim):
     fg = plot_figure_response_predict_maps(path, species='t', field='response',
                                            bust='2015OND', save=True)
@@ -873,6 +936,20 @@ def plot_figure_19(path=work_chaim):
                                            bust='2015OND', save=True)
     print('Caption: ')
     print('The water vapor anomalies, reconstruction and residuals maps for the 82.54 hPa level in the 2015-OND forecast bust.')
+    return fg
+
+
+def plot_figure_19_1(path=work_chaim):
+    fg = plot_figure_response_predict_maps(
+        path,
+        species='H2O',
+        time_mean=None,
+        ncfile='MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc',
+        field='predict',
+        bust='2015OND',
+        save=True)
+    print('Caption: ')
+    print('The water vapor anomalies predictor response map for the 82.54 hPa level in the 2015-OND forecast bust.')
     return fg
 
 
