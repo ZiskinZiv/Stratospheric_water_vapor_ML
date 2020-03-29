@@ -1062,3 +1062,45 @@ def plot_figure_poly2_params(path=work_chaim):
                         hspace=0.0,
                         wspace=0.21)
     return fg
+
+
+def plot_1984_2004_comparison(path=work_chaim, reg_drop=None):
+    import xarray as xr
+
+    def drop_reg_from_da(da, to_drop=None):
+        if to_drop is not None:
+            ds = da.to_dataset('regressors')
+            ds = ds[[x for x in ds.data_vars if to_drop not in x]]
+            da = ds.to_array('regressors')
+            return da
+    rds_1984 = xr.open_dataset(
+        path /
+        'MLR_H2O_latpress_cdas-plags_ch4_enso_1984-2019.nc')
+    rds_1984_82 = rds_1984.sel(level=82, method='nearest')
+    predict_1984 = rds_1984_82['predict']
+    X = rds_1984_82['X']
+    rds_2004 = xr.open_dataset(
+        path /
+        'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
+    rds_2004_82 = rds_2004.sel(
+        level=82,
+        method='nearest').mean(
+        'lon',
+        keep_attrs=True)
+    params_2004 = rds_2004_82['params'].interp(lat=rds_1984['lat'])
+    if reg_drop is not None:
+        params_2004 = drop_reg_from_da(params_2004, reg_drop)
+        X = drop_reg_from_da(X, reg_drop)
+    intercept_2004 = rds_2004_82['intercept'].interp(lat=rds_1984['lat'])
+    predict_2004 = params_2004.dot(X, dims=['regressors']) + intercept_2004
+    compare = xr.concat([predict_1984, predict_2004], 'beta')
+    compare['beta'] = ['1984 coeffs', '2004 coeffs']
+    compare = compare.T
+    compare.plot.contourf(levels=41, figsize=(15, 6), row='beta')
+    plt.subplots_adjust(top=0.934,
+                        bottom=0.09,
+                        left=0.034,
+                        right=0.84,
+                        hspace=0.185,
+                        wspace=0.2)
+    return compare
