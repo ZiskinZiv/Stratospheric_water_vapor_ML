@@ -937,6 +937,23 @@ def _produce_totexttau(loadpath=work_chaim/'MERRA2/aerosol_carbon',
 #    plt.legend(['PC', times.name])
 #    plt.show()
 #    return
+def create_nino_time_mask(loadpath=reg_path, thresh=0.5, event='la_nina',
+                          plot=True):
+    enso = _download_enso_ersst(loadpath)
+    if event == 'la_nina':
+        index = enso['ANOM_NINO3.4'].sel(time=slice('1984', '2019')).where(enso['ANOM_NINO3.4'] < -thresh)
+        name = 'la_nina_events'
+    elif event == 'el_nino':
+        index = enso['ANOM_NINO3.4'].sel(time=slice('1984', '2019')).where(enso['ANOM_NINO3.4'] > thresh)
+        name = 'el_nino_events'
+    elif event is None:
+        index = enso['ANOM_NINO3.4'].sel(time=slice('1984', '2019')).where(enso['ANOM_NINO3.4'] <= thresh).where(enso['ANOM_NINO3.4'] >= -thresh)
+        name = 'neutral_enso'
+    da = index.dropna('time')['time']
+    da.name = name
+    if plot:
+        index.plot()
+    return da
 
 
 def _make_nc_files_run_once(loadpath=work_chaim, savepath=None):
