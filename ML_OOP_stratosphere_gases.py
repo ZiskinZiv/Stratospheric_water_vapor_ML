@@ -220,8 +220,12 @@ def run_level_month_shift(plags=['qbo_cdas'],
                           lslice=[-20, 20],
                           time_period=['1984', '2019'], lag_period=[0, 12],
                           species=None):
+    import xarray as xr
     print('producing level month shift for {} regressors'.format(plags))
-    print('time period: {} to {}'.format(*time_period))
+    if isinstance(time_period, xr.DataArray):
+        print('time period: {}'.format(time_period.name))
+    else:
+        print('time period: {} to {}'.format(*time_period))
     print('latitude boundries: {} to {}'.format(*lslice))
     print('month lags allowed: {} to {}'.format(*lag_period))
     if species is None:
@@ -237,8 +241,6 @@ def run_level_month_shift(plags=['qbo_cdas'],
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
                      regressors=plags, data_file='era5_u_85hPa.nc')
     return rds.level_month_shift
-
-
 
 
 def produce_run_ML_for_each_season(plags=['qbo_cdas'], regressors=[
@@ -2029,7 +2031,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
                         cax=cbar_ax, orientation="horizontal", label='',
                         format='%0.3f')
                 fg.fig.suptitle(label_add, fontsize=12, fontweight=750)
-                ax = [ax for ax in fg.axes.flat][2]
+                ax = [ax for ax in fg.axes.flat][-1]
                 fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
                 # [ax.invert_yaxis() for ax in con.ax.figure.axes]
                 [ax.invert_yaxis() for ax in fg.axes.flat]
@@ -2639,10 +2641,15 @@ class TargetArray(Dataset):
         return self
 
     def select_times(self, times):
+        import xarray as xr
         to_update = self.__dict__
-        self = self.sel({self.sample_dim: slice(*times)})
-        self.__dict__.update(to_update)
-        self.attrs['times'] = times
+        if isinstance(times, xr.DataArray):
+            self = self.sel({self.sample_dim: times})
+            self.__dict__.update(to_update)
+        else:
+            self = self.sel({self.sample_dim: slice(*times)})
+            self.__dict__.update(to_update)
+            self.attrs['times'] = times
         self.time_period = times
         return self
 
@@ -2881,10 +2888,15 @@ class PredictorSet(Dataset):
         return self
 
     def select_times(self, times):
+        import xarray as xr
         to_update = self.__dict__
-        self = self.sel({self.sample_dim: slice(*times)})
-        self.__dict__.update(to_update)
-        self.attrs['times'] = times
+        if isinstance(times, xr.DataArray):
+            self = self.sel({self.sample_dim: times})
+            self.__dict__.update(to_update)
+        else:
+            self = self.sel({self.sample_dim: slice(*times)})
+            self.__dict__.update(to_update)
+            self.attrs['times'] = times
         self.time_period = times
         return self
 
