@@ -1104,3 +1104,20 @@ def plot_1984_2004_comparison(path=work_chaim, reg_drop=None):
                         hspace=0.185,
                         wspace=0.2)
     return compare
+
+def plot_1984_2004_prediction_vise_versa(path=work_chaim):
+    import xarray as xr
+    # first open 1984 and 2004 analysis for enso and qbo only:
+    rds_1984 = xr.open_dataset(
+        path /
+        'MLR_H2O_latpress_cdas-plags_enso_1984-2004.nc')
+    rds_1984_82 = rds_1984.sel(level=82, method='nearest')
+    rds_2004 = xr.open_dataset(
+        path /
+        'MLR_H2O_latpress_cdas-plags_enso_2004-2019.nc')
+    rds_2004_82 = rds_2004.sel(level=82, method='nearest')
+    # now predict 2004-2019 using 1984 fit:
+    predict_2004_from_1984 = rds_1984_82['params'].dot(rds_2004_82['X'],dims=['regressors']) + rds_1984_82['intercept']
+    # now predict 1984-2004 using 2004 fit:
+    predict_2004_from_1984 = rds_1984_82['params'].dot(rds_2004_82['X'],dims=['regressors']) + rds_1984_82['intercept']
+    return
