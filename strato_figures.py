@@ -1105,19 +1105,74 @@ def plot_1984_2004_comparison(path=work_chaim, reg_drop=None):
                         wspace=0.2)
     return compare
 
-def plot_1984_2004_prediction_vise_versa(path=work_chaim):
+
+def plot_1984_2004_prediction_vise_versa(path=work_chaim,
+                                         reg='poly_2_no_qbo^2'):
     import xarray as xr
     # first open 1984 and 2004 analysis for enso and qbo only:
-    rds_1984 = xr.open_dataset(
-        path /
-        'MLR_H2O_latpress_cdas-plags_enso_1984-2004.nc')
+    if reg is not None:
+        rds_1984 = xr.open_dataset(
+            path /
+            'MLR_H2O_latpress_cdas-plags_enso_{}_1984-2004.nc'.format(reg))
+    else:
+        rds_1984 = xr.open_dataset(
+            path /
+            'MLR_H2O_latpress_cdas-plags_enso_1984-2004.nc')
     rds_1984_82 = rds_1984.sel(level=82, method='nearest')
-    rds_2004 = xr.open_dataset(
-        path /
-        'MLR_H2O_latpress_cdas-plags_enso_2004-2019.nc')
+    if reg is not None:
+        rds_2004 = xr.open_dataset(
+            path /
+            'MLR_H2O_latpress_cdas-plags_enso_{}_2004-2019.nc'.format(reg))
+    else:
+        rds_2004 = xr.open_dataset(
+            path /
+            'MLR_H2O_latpress_cdas-plags_enso_2004-2019.nc')
     rds_2004_82 = rds_2004.sel(level=82, method='nearest')
     # now predict 2004-2019 using 1984 fit:
-    predict_2004_from_1984 = rds_1984_82['params'].dot(rds_2004_82['X'],dims=['regressors']) + rds_1984_82['intercept']
+    predict_2004_from_1984 = rds_1984_82['params'].dot(
+        rds_2004_82['X'], dims=['regressors']) + rds_1984_82['intercept']
+    compare_2004_from_1984 = xr.concat(
+        [rds_1984_82['original'], predict_2004_from_1984], 'time')
     # now predict 1984-2004 using 2004 fit:
-    predict_2004_from_1984 = rds_1984_82['params'].dot(rds_2004_82['X'],dims=['regressors']) + rds_1984_82['intercept']
-    return
+    predict_1984_from_2004 = rds_2004_82['params'].dot(
+        rds_1984_82['X'], dims=['regressors']) + rds_2004_82['intercept']
+    compare_1984_from_2004 = xr.concat(
+        [rds_2004_82['original'], predict_1984_from_2004], 'time')
+    compare = xr.concat(
+        [compare_2004_from_1984, compare_1984_from_2004], 'compare')
+    compare['compare'] = [r'2004-2019 data from 1984 $\beta$',
+                          r'1984-2004 data from 2004 $\beta$']
+    compare = compare.sortby('time').transpose('lat', ...)
+    fg = compare.plot.contourf(levels=41, row='compare', figsize=(20, 6))
+    axes = fg.axes.flatten()
+    axes[0].set_title(r'2004-2019 prediction from 1984-2004 $\beta$')
+    axes[1].set_title(r'1984-2004 prediction from 2004-2019 $\beta$')
+    plt.draw()
+    return compare
+
+
+def plot_enso_events(path=work_chaim):
+    import xarray as xr
+    enso = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_1984-2019_neutral_enso.nc')
+    la_nina = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_1984-2019_la_nina.nc')
+    el_nino = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_1984-2019_el_nino.nc')
+    la_nina_size = la_nina['original'].dropna('time').time.size
+    el_nino_size = el_nino['original'].dropna('time').time.size
+    enso_size = enso['original'].dropna('time').time.size
+    compare = xr.concat([enso['params'], la_nina['params'], el_nino['params']], 'events')
+    compare['events'] = [
+        'neutral enso ({})'.format(enso_size),
+        'la nina ({})'.format(la_nina_size),
+        'el nino ({})'.format(el_nino_size)]
+    fg = compare.plot.contourf(
+        yscale='log',
+        row='regressors',
+        col='events',
+        levels=41, yincrease=False,
+        figsize=(
+            20,
+            10))
+    [ax.invert_yaxis() for ax in fg.axes.flat]
+    [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
+     fg.axes.flat]
+    return fg
