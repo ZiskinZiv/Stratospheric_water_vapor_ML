@@ -938,7 +938,7 @@ def _produce_totexttau(loadpath=work_chaim/'MERRA2/aerosol_carbon',
 #    plt.show()
 #    return
 def create_nino_time_mask(loadpath=reg_path, thresh=0.5, event='la_nina',
-                          plot=True):
+                          times=None, plot=True):
     enso = _download_enso_ersst(loadpath)
     if event == 'la_nina':
         index = enso['ANOM_NINO3.4'].sel(time=slice('1984', '2019')).where(enso['ANOM_NINO3.4'] < -thresh)
@@ -949,6 +949,9 @@ def create_nino_time_mask(loadpath=reg_path, thresh=0.5, event='la_nina',
     elif event is None:
         index = enso['ANOM_NINO3.4'].sel(time=slice('1984', '2019')).where(enso['ANOM_NINO3.4'] <= thresh).where(enso['ANOM_NINO3.4'] >= -thresh)
         name = 'neutral_enso'
+    if times is not None:
+        index = index.sel(time=slice(*times))
+        print('Dates selected: {} to {}'.format(*times))
     da = index.dropna('time')['time']
     da.name = name
     if plot:

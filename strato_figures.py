@@ -324,18 +324,19 @@ def plot_figure_4(path=work_chaim):
 
 
 def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
-                        bust_lines=True, save=True):
+                        bust_lines=True, st_year=None, save=True):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     import math
-    rds = xr.open_dataset(path / ncfile)
+    rds = xr.load_dataset(path / ncfile)
     species = ncfile.split('.')[0].split('_')[1]
     regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
     if species == 'H2O':
         geo_title = {
                 'lat': r'Area-averaged (from 180$\degree$W to 180$\degree$E longitudes) combined H2O anomaly for the {} hPa pressure level'.format(level),
                 'lon': r'Area-averaged (weighted by cosine of latitudes 60$\degree$S to 60$\degree$N) combined H2O anomaly for the {} hPa pressure level'.format(level)}
-        st_year = 2005
+        if st_year is None:
+            st_year = 2005
         unit = 'ppmv'
     elif species == 't':
         geo_title = {
@@ -358,7 +359,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
     # remove time from xlabel:
     bottom_ax.set_xlabel('')
     # new ticks:
-    bottom_ax = change_xticks_years(bottom_ax, start=st_year, end=2019)
+    # bottom_ax = change_xticks_years(bottom_ax, start=st_year, end=2019)
     top_ax.set_title(geo_title.get(geo))
     mid_ax.set_title('MLR reconstruction')
     bottom_ax.set_title('Residuals')
@@ -1106,6 +1107,32 @@ def plot_1984_2004_comparison(path=work_chaim, reg_drop=None):
     return compare
 
 
+def process_qbo_enso_from_2004_beta(path=work_chaim):
+    import xarray as xr
+    ncfile = 'MLR_H2O_latpress_cdas-plags_enso_1984-2019_from_2004_beta.nc'
+    if (path/ncfile).is_file():
+        print('plotting..')
+        fg = plot_latlon_predict(ncfile, path=work_chaim, geo='lat',
+                                 level=82.54, st_year=1984,
+                                 bust_lines=True, save=True)
+        return fg
+    else:
+        print('proccesing...')
+        rds_all = xr.open_dataset(path / 'MLR_H2O_latpress_cdas-plags_enso_poly_2_no_qbo^2_1984-2019.nc')
+        rds_2004 = xr.open_dataset(
+                path /
+                'MLR_H2O_latpress_cdas-plags_enso_poly_2_no_qbo^2_2004-2019.nc')
+        rds_2004 = rds_2004.drop(['X', 'original', 'predict', 'resid'])
+        rds_2004['time'] = rds_all['time']
+        rds_2004['predict'] = rds_2004['params'].sortby('regressors').dot(
+            rds_all['X'].sortby('regressors'), dims=['regressors']) + rds_2004['intercept']
+        rds_2004['original'] = rds_all['original']
+        rds_2004['resid'] = rds_2004['original'] - rds_2004['predict']
+        rds_2004.to_netcdf(path / ncfile)
+        print('file saved, run again to plot.')
+        return rds_2004
+
+
 def plot_1984_2004_prediction_vise_versa(path=work_chaim,
                                          reg='poly_2_no_qbo^2'):
     import xarray as xr
@@ -1151,11 +1178,11 @@ def plot_1984_2004_prediction_vise_versa(path=work_chaim,
     return compare
 
 
-def plot_enso_events(path=work_chaim):
+def plot_enso_events(path=work_chaim, year='1984'):
     import xarray as xr
-    enso = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_1984-2019_neutral_enso.nc')
-    la_nina = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_1984-2019_la_nina.nc')
-    el_nino = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_1984-2019_el_nino.nc')
+    enso = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_{}-2019_neutral_enso.nc'.format(year))
+    la_nina = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_{}-2019_la_nina.nc'.format(year))
+    el_nino = xr.load_dataset(path/'MLR_H2O_latpress_cdas-plags_enso_{}-2019_el_nino.nc'.format(year))
     la_nina_size = la_nina['original'].dropna('time').time.size
     el_nino_size = el_nino['original'].dropna('time').time.size
     enso_size = enso['original'].dropna('time').time.size
@@ -1175,4 +1202,5 @@ def plot_enso_events(path=work_chaim):
     [ax.invert_yaxis() for ax in fg.axes.flat]
     [ax.yaxis.set_major_formatter(ScalarFormatter()) for ax in
      fg.axes.flat]
+    fg.fig.suptitle('From MLR on {}-2019 data'.format(year))
     return fg
