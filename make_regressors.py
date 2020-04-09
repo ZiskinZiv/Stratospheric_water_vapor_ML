@@ -916,6 +916,63 @@ def _produce_totexttau(loadpath=work_chaim/'MERRA2/aerosol_carbon',
     return da
 
 
+def _produce_nao(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_csv(loadpath / 'nao.txt',
+                     delim_whitespace=True,
+                     names=[
+                         'year',
+                         'month',
+                         'nao'])
+    df['time'] = df['year'].astype(str) + '-' + df['month'].astype(str)
+
+    df['time'] = pd.to_datetime(df['time'])
+    df = df.set_index('time')
+    df = df.drop(['year', 'month'], axis=1)
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'nao_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
+
+def _produce_ea_wr(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_csv(loadpath / 'EA-WR.txt',
+                     delim_whitespace=True,
+                     names=[
+                         'year',
+                         'month',
+                         'ea-wr'])
+    df['time'] = df['year'].astype(str) + '-' + df['month'].astype(str)
+
+    df['time'] = pd.to_datetime(df['time'])
+    df = df.set_index('time')
+    df = df.drop(['year', 'month'], axis=1)
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'ea-wr_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
+
+def _produce_pdo(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_csv(loadpath / 'pdo.txt',
+                     names=['date', 'pdo'], skiprows=2)
+    df['time']=pd.to_datetime(df['date'],format='%Y%m')
+    df = df.set_index('time')
+    df = df.drop('date', axis=1)
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'pdo_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
+
 #def plot_time_over_pc_xr(pc, times, norm=5):
 #    import numpy as np
 #    import matplotlib.pyplot as plt
