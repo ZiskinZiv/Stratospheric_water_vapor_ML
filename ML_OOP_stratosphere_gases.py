@@ -219,7 +219,7 @@ class ML_Switcher(object):
 def run_level_month_shift(plags=['qbo_cdas'],
                           lslice=[-20, 20],
                           time_period=['1984', '2019'], lag_period=[0, 12],
-                          species=None):
+                          species=None, latlon=False):
     import xarray as xr
     print('producing level month shift for {} regressors'.format(plags))
     if isinstance(time_period, xr.DataArray):
@@ -231,7 +231,7 @@ def run_level_month_shift(plags=['qbo_cdas'],
     if species is None:
         rds = run_ML(time_period=time_period, area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
-                     regressors=plags)
+                     regressors=plags, swoosh_latlon=latlon)
     elif species == 't':
         rds = run_ML(time_period=time_period, species='t', area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
@@ -723,7 +723,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
         rds.level_month_shift.plot.line('r.-', y='level', yincrease=False)
-        rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False, levels=21)
+        rds.r2_adj.T.plot.contourf(yscale='log', yincrease=False, levels=21)
         ax = plt.gca()
         ax.set_title(', '.join(X.regressors.values.tolist()))
         ax.yaxis.set_major_formatter(ScalarFormatter())
@@ -768,10 +768,10 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         rds['months_shift'] = shifts
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
-        fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
+        fg = rds.r2_adj.T.plot.contourf(yscale='log', yincrease=False,
                                           levels=21, col='reg_shifted',
                                           cmap='viridis', vmin=0.0,
-                                          extend='both')
+                                          extend=None, vmax=rds.r2.max())
         for n_regs in range(len(fg.axes[0])):
             rds.isel(reg_shifted=n_regs).level_month_shift.plot.line('r.-',
                                                                      y='level',

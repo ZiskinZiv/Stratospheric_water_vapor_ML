@@ -973,6 +973,67 @@ def _produce_pdo(loadpath=reg_path, savepath=reg_path):
     return da
 
 
+def _produce_moi2(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_fwf(
+        reg_path /
+        'moi2.txt',
+        names=['year', 'date', 'moi2'],
+        widths=[4, 8, 5])
+    df['date'] = df['date'].str.strip('.')
+    df['date'] = df['date'].str.strip(' ')
+    df['date'] = df['date'].str.replace(' ', '0')
+    df['date'] = df['date'].str.replace('.', '-')
+    df['time'] = df['year'].astype(str) + '-' + df['date'].astype(str)
+    df['time'] = pd.to_datetime(df['time'], format='%Y-%m-%d')
+    df = df.set_index('time')
+    df = df.drop(['date', 'year'], axis=1)
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'moi2_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
+
+def _produce_mei_v2(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_csv(loadpath / 'meiv2.txt',
+                     names=['YEAR', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                     skiprows=3, delim_whitespace=True, na_values=-999)
+    df = pd.melt(df, id_vars='YEAR', var_name='month', value_name='meiv2')
+    df['time'] = df['YEAR'].astype(str) + '-' + df['month'].astype(str)
+    df['time'] = pd.to_datetime(df['time'])
+    df = df.set_index('time')
+    df = df.sort_index()
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'meiv2_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
+
+def _produce_glossac_aod(loadpath=work_chaim, savepath=reg_path):
+    import xarray as xr
+    import pandas as pd
+    from aux_functions_strat import lat_mean
+    glo = xr.load_dataset(work_chaim / 'GloSSAC_V2.0.nc')
+    time = pd.to_datetime(glo['time'].values, format='%Y%m')
+    glo['time'] = time
+    glo['wavelengths_glossac'] = [str(x)
+                                  for x in glo['wavelengths_glossac'].values]
+    aod_wl = glo['Glossac_Aerosol_Optical_Depth'].to_dataset(
+        'wavelengths_glossac')
+    aod_wl = aod_wl.drop(['386', '452'])
+    aod_eq = lat_mean(aod_wl.sel(lat=slice(-15, 15)))
+    aod = aod_eq['525']
+    aod.name = 'aod'
+    if savepath is not None:
+        filename = 'aod_index.nc'
+        aod.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return aod
 #def plot_time_over_pc_xr(pc, times, norm=5):
 #    import numpy as np
 #    import matplotlib.pyplot as plt
