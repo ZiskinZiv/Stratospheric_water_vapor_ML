@@ -1204,3 +1204,9 @@ def plot_enso_events(path=work_chaim, year='1984'):
      fg.axes.flat]
     fg.fig.suptitle('From MLR on {}-2019 data'.format(year))
     return fg
+
+# Check Diallo 2018 et al:
+# 1)do lms with ENSO, QBO, AOD (or vol or aot)
+# 2)do run_ML with them (lat-pressure only)
+# 3) do 1) +2) with ENSO, AOD only
+# subtract 2) from 3) and compare with QBO*beta(QBO)

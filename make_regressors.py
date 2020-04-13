@@ -1034,6 +1034,47 @@ def _produce_glossac_aod(loadpath=work_chaim, savepath=reg_path):
         aod.to_netcdf(savepath / filename)
         print_saved_file(filename, savepath)
     return aod
+
+
+def _produce_volcanic_aot(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_csv(
+        loadpath /
+        'AOT.txt',
+        skiprows=2,
+        delim_whitespace=True,
+        names=[
+            'date',
+            'aot'])
+    df['year'] = df['date'].astype(int)
+    df['month'] = (round((df['date'] - df['year']) * 12) + 1).astype(int)
+    df['time'] = df['year'].astype(str) + '-' + df['month'].astype(str)
+    df['time'] = pd.to_datetime(df['time'])
+    df = df.set_index('time')
+    df = df.drop(['date', 'year', 'month'], axis=1)
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'aot_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
+
+def _produce_linear_trend(times=['1979', '2019'], savepath=reg_path):
+    import pandas as pd
+    import numpy as np
+    import xarray as xr
+    start = pd.to_datetime('{}-01-01'.format(times[0]))
+    end = pd.to_datetime('{}-12-31'.format(times[1]))
+    time = pd.date_range(start=start, end=end, freq='MS')
+    trend=np.linspace(0, 1, num=len(time))
+    da = xr.DataArray(trend, dims=['time'])
+    da['time'] = time
+    if savepath is not None:
+        filename = 'trend_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
 #def plot_time_over_pc_xr(pc, times, norm=5):
 #    import numpy as np
 #    import matplotlib.pyplot as plt

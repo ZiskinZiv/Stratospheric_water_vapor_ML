@@ -623,7 +623,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
            reg_time_shift=None, season=None, add_poly_reg=None, lms=None,
            special_run=None, gridsearch=False, plevels=None,
            lat_slice=[-60, 60], swoosh_latlon=False, param_grid=None,
-           data_file='swoosh_latpress-2.5deg.nc'):
+           data_file='swoosh_latpress-2.5deg.nc', units='ppmv'):
     """Run ML model with...
     regressors = None
     special_run is a dict with key as type of run, value is values passed to
@@ -2601,6 +2601,7 @@ class TargetArray(Dataset):
                  season=None, deseason_method=None, time_period=None, field=None,
                  plevels=None, area_mean=None,
                  swoosh_field='combinedanomfillanom', lat_slice=None,
+                 seasonal_field='combinedseas', units='ppmv',
                  **kwargs):
         super().__init__(*args)
         self.loadpath = loadpath
@@ -2617,6 +2618,8 @@ class TargetArray(Dataset):
         self.plevels = plevels
         self.area_mean = area_mean
         self.lat_slice = lat_slice
+        self.seasonal_field = seasonal_field
+        self.units = units
 
     def from_dict(self, d):
         self.__dict__.update(d)
@@ -2667,7 +2670,7 @@ class TargetArray(Dataset):
         return self
 
     def load(self, loadpath=None, data_file=None, species=None,
-             swoosh_field=None, verbose=None):
+             swoosh_field=None, seasonal_field=None, units=None, verbose=None):
         import xarray as xr
         import click
         # read all locals() and replace Nons vals with defualts from class:
@@ -2679,6 +2682,8 @@ class TargetArray(Dataset):
         data_file = vars_dict.get('data_file')
         species = vars_dict.get('species')
         swoosh_field = vars_dict.get('swoosh_field')
+        seasonal_field = vars_dict.get('seasonal_field')
+        units = vars_dict.get('units')
         verbose = vars_dict.get('verbose')
         if species != 'h2o' and species != 'o3':
             swoosh_field = None
@@ -2690,6 +2695,12 @@ class TargetArray(Dataset):
                 print('loading SWOOSH file: {}'.format(data_file))
             if verbose:
                 print('loading SWOOSH field: {}'.format(field))
+            if seasonal_field is not None:
+                seas_field = '{}{}q'.format(seasonal_field, species)
+                seas = xr.load_dataset(loadpath / data_file)[seas_field]
+                if units == '%':
+                    ds = ds.copy(data=100 * (ds / seas))
+                    ds.attrs['units'] = '%'
         elif (swoosh_field is None and (species == 'h2o' or species == 'o3')):
             msg = 'species is {}, and original_data_file is not SWOOSH'.format(
                 species)
