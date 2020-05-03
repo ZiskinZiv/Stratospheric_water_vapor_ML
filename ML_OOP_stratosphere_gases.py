@@ -2,7 +2,15 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Mar 10 13:20:30 2019
-
+recipes:
+    use :
+    cvr=run_ML(RI_proc=False,model_name='KRR',time_period=['2005','2019'],
+    cv={'rkfold':[5,5]},regressors=['ch4', 'anom_nino3p4', 'qbo_cdas'],
+    lms=None,plevels=82,swoosh_latlon=True, gridsearch=True)
+    to run a non-linear KRR model gridsearch with reapeated kfolds
+    get best params and best estimator:
+    best_params = cvr.best_params_
+    best_model = cvr.best_estimator_
 @author: shlomi
 """
 # TODO: build GridSearchCV support directley like ultioutput regressors
@@ -18,6 +26,93 @@ from warnings import simplefilter
 # ignore all future warnings
 simplefilter(action='ignore', category=FutureWarning)
 sound_path = work_chaim / 'sounding'
+
+
+def train_model_and_apply(train_period=['2004-08', '2019'],
+                          test_period=['1984', '2004-07'], model_name='KRR',
+                          regressors=['ch4', 'anom_nino3p4', 'qbo_cdas'],
+                          param_grid=None, skip_cv=False, plevels=None):
+    import xarray as xr
+    from sklearn.metrics import r2_score
+    from aux_functions_strat import xr_order
+    # first run grid search on train set:
+    print('running GridSearchCV first:')
+    train_args = dict(species='h2o', swoosh_field='combinedanomfillanom',
+                      model_name=model_name,
+                      RI_proc=False, time_period=train_period, cv={'rkfold': [5, 5]},
+                      regressors=regressors, lms=None, gridsearch=True,
+                      lat_slice=[-60, 60], swoosh_latlon=False,
+                      param_grid=param_grid, plevels=plevels,
+                      data_file='swoosh_latpress-2.5deg.nc')
+    if not skip_cv:
+        cvr = run_ML(**train_args)
+        model = cvr.best_estimator_
+        ml_params = model.get_params()
+        args = train_args.copy()
+        args.update(cv=None, gridsearch=False, ml_params=ml_params)
+        rds_train = run_ML(**args)
+        model = rds_train
+    else:
+        ml_params=dict(alpha=2.0, coef0=1, degree=2, gamma=1.0, kernel='rbf',
+                       kernel_params=None)
+        args = train_args.copy()
+        args.update(cv=None, gridsearch=False, ml_params=ml_params)
+        rds_train = run_ML(**args)
+        model = rds_train
+    test_args = train_args.copy()
+    test_args.update(cv=None, gridsearch=False,
+                     time_period=test_period)
+    Pset = PredictorSet(**test_args, loadpath=Path().cwd() / 'regressors')
+    X = Pset.pre_process()
+    Target = TargetArray(**test_args, loadpath=work_chaim)
+    y = Target.pre_process()
+    rds_test = xr.Dataset()
+    rds_test['original'] = y
+#    if not skip_cv:
+#        predict = y.copy(data=model.predict(X))
+#    else:
+    predict = model.predict(X)
+    predict = predict.rename({'regressors': 'samples'})
+    rds_test['predict'] = predict
+    r2 = r2_score(y, predict, multioutput='raw_values')
+    rds_test['r2'] = xr.DataArray(r2, dims=['samples'])
+    r2_adj = 1.0 - (1.0 - rds_test['r2']) * (len(y) - 1.0) / \
+                 (len(y) - X.shape[1])
+    rds_test['r2_adj'] = r2_adj
+    rds_test['predict'].attrs = y.attrs
+    rds_test['resid'] = y - rds_test['predict']
+    rds_test['resid'].attrs = y.attrs
+    rds_test['resid'].attrs['long_name'] = 'Residuals'
+    rds_test = rds_test.unstack('samples')
+    # order:
+    rds_test = xr_order(rds_test)
+    # put coords attrs back:
+    for coord, attr in y.attrs['coords_attrs'].items():
+        rds_test[coord].attrs = attr
+    # remove coords attrs from original, predict and resid:
+    rds_test.original.attrs.pop('coords_attrs')
+    rds_test.predict.attrs.pop('coords_attrs')
+    rds_test.resid.attrs.pop('coords_attrs')
+    all_var_names = [x for x in rds_test.data_vars.keys()]
+    sample_types = [x for x in rds_test.data_vars.keys()
+                    if 'time' in rds_test[x].dims]
+    feature_types = [x for x in rds_test.data_vars.keys()
+                     if 'regressors' in rds_test[x].dims]
+    error_types = list(set(all_var_names) - set(sample_types +
+                                                feature_types))
+    rds_test.attrs['sample_types'] = sample_types
+    rds_test.attrs['feature_types'] = feature_types
+    rds_test.attrs['error_types'] = error_types
+    rds_test.attrs['sample_dim'] = 'time'
+    rds_test.attrs['feature_dim'] = 'regressors'
+    # add X to results:
+    rds_test['X'] = X
+    print(model)
+    das = [x for x in rds_train.results_ if x in rds_test]
+    rds_train = rds_train.results_[das]
+    rds = xr.concat([rds_train, rds_test], 'time')
+    rds = rds.sortby('time')
+    return rds
 
 
 class Parameters:
@@ -160,9 +255,10 @@ class ML_Switcher(object):
     def KRR(self):
         from sklearn.kernel_ridge import KernelRidge
         import numpy as np
-        self.param_grid = {'gamma': np.logspace(-5, 1, 5),
-                           'alpha': np.logspace(-5, 2, 5)}
-        return KernelRidge(kernel='poly', degree=3)
+        self.param_grid = {'gamma': np.logspace(-5, 1, 10),
+                           'alpha': np.logspace(-5, 2, 10),
+                           'kernel': ['poly', 'rbf', 'sigmoid']}
+        return KernelRidge(degree=2)
 
     def GPR(self):
         from sklearn.gaussian_process import GaussianProcessRegressor
@@ -2047,7 +2143,7 @@ def plot_like_results(*results, plot_key='predict_level', level=None,
             label_add = r'Adjusted $R^2$'
             plt_kwargs.update({'cmap': 'viridis', 'figsize': (6, 8),
                                'yincrease': False, 'levels': 41, 'vmin': 0.0,
-                               'yscale': 'log'})
+                               'yscale': 'log', 'add_colorbar': True})
             if geo_key == 'level-lat' or geo_key == 'level-lon':
                 if geo_key == 'level-lat':
                     if p.lon is not None and not p.lon_mean:
@@ -2908,7 +3004,7 @@ class PredictorSet(Dataset):
             self = self.sel({self.sample_dim: slice(*times)})
             self.__dict__.update(to_update)
             self.attrs['times'] = times
-        self.time_period = times
+        # self.time_period = times
         return self
 
     def select(self, pred_list, base_preds=True, stack=True):
@@ -2998,7 +3094,8 @@ class PredictorSet(Dataset):
         # 2) select base predictors (i.e., without poly)
         self = self.select(self.regressors, base_preds=True)
         # 3) select time period
-        self = self.select_times(self.time_period)
+        # self = self.select_times(self.time_period)
+        self = self.select_times(['1984', '2019']) # the maximum
         # 4) deseason
         self = self.deseason()
         # 5) normalize
@@ -3009,6 +3106,8 @@ class PredictorSet(Dataset):
         # 7) optional: season selection
         if self.season is not None:
             self = self.select_season(self.season)
+        # finally, select the times:
+        self = self.select_times(self.time_period)            
         # 8) to_array - stacking
         if stack:
             X = self.select(self.regressors, base_preds=False, stack=True)
