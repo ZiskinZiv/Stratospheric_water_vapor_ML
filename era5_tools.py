@@ -58,6 +58,7 @@ def transform_model_levels_to_pressure(path, field_da, plevel=85.0, mm=True):
     da.name = field_da.name
     da.attrs = field_da.attrs
     da = da.sortby('lat')
+    da = da.sortby('time')
     comp = dict(zlib=True, complevel=9)  # best compression
     encoding = {var: comp for var in da.to_dataset(name=da.name).data_vars}
     filename = 'era5_' + da.name + '_' + str(int(plevel)) + 'hPa.nc'
