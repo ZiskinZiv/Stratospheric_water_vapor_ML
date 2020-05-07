@@ -2977,7 +2977,8 @@ class PredictorSet(Dataset):
         from aux_functions_strat import deseason_xr
         # update this dict to include predictors to be deseasoned and how:
         deseason_dict = {'radio_cold': 'mean', 'radio_cold_no_qbo': 'mean',
-                         'era5_bdc': 'mean'}
+                         'era5_bdc': 'mean', 'era5_bdc70': 'mean',
+                         'era5_bdc82': 'mean'}
         if self.deseason_dict is not None:
             deseason_dict.update(self.deseason_dict)
         for pred, how in deseason_dict.items():
