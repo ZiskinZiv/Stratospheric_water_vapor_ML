@@ -183,6 +183,37 @@ def change_xticks_years(ax, start=1984, end=2018):
     return ax
 
 
+def plot_reg_correlation_heatmap(
+        regs=['qbo_cdas', 'anom_nino3p4', 'era5_bdc70', 'era5_bdc82',
+              'era5_t500', 'radio_cold', 'radio_cold_no_qbo'],
+        lms=None, plevel=82, time_period=['1984', '2019']):
+    import seaborn as sns
+    from ML_OOP_stratosphere_gases import PredictorSet
+    Pset = PredictorSet(regressors=regs,time_period=time_period,
+                        loadpath=Path().cwd()/'regressors')
+    ds = Pset.pre_process(stack=False)
+    if lms is not None:
+        lms = lms.sel(level=plevel, method='nearest')
+        lms = lms.where(lms!=0).dropna('reg_shifted').astype(int)
+        regs_to_shift = list(
+            set(lms.reg_shifted.values).intersection(set([x for x in ds])))
+        for reg in regs_to_shift:
+            lag = lms.sel(reg_shifted=reg).values.item()
+            ds[reg] = ds[reg].shift(time=lag)
+            ds = ds.rename({reg: '{}({})'.format(reg, lag)})
+            ds.attrs[reg] = lag
+        ds.attrs['level_shifted'] = plevel
+    df = ds.to_dataframe()
+    g = sns.heatmap(df.corr(),annot=True,cmap='bwr',center=0)
+    g.set_xticklabels(g.get_xticklabels(), rotation = 45, fontsize = 12)
+    if lms is not None:
+        g.set_title('{}-{} with lags in parenthatis that maximize R$^2$ H2O in {} hPa'.format(time_period[0], time_period[1], plevel))
+    else:
+        g.set_title('{}-{}'.format(time_period[0], time_period[1]))
+    g.figure.tight_layout()
+    return g
+
+
 def plot_figure_1(path=work_chaim, regressors=['qbo_cdas']):
     from ML_OOP_stratosphere_gases import run_ML
     # sns.set_style('ticks', rc=rc)
