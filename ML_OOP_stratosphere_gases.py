@@ -31,20 +31,22 @@ sound_path = work_chaim / 'sounding'
 def train_model_and_apply(train_period=['2004-08', '2019'],
                           test_period=['1984', '2004-07'], model_name='KRR',
                           regressors=['ch4', 'anom_nino3p4', 'qbo_cdas'],
-                          param_grid=None, skip_cv=False, plevels=None):
+                          param_grid=None, skip_cv=False, plevels=None,
+                          model_params='KRR', lms=None):
     import xarray as xr
     from sklearn.metrics import r2_score
     from aux_functions_strat import xr_order
+    from aux_functions_strat import dim_intersection
     # first run grid search on train set:
-    print('running GridSearchCV first:')
     train_args = dict(species='h2o', swoosh_field='combinedanomfillanom',
                       model_name=model_name,
                       RI_proc=False, time_period=train_period, cv={'rkfold': [5, 5]},
-                      regressors=regressors, lms=None, gridsearch=True,
+                      regressors=regressors, lms=lms, gridsearch=True,
                       lat_slice=[-60, 60], swoosh_latlon=False,
                       param_grid=param_grid, plevels=plevels,
                       data_file='swoosh_latpress-2.5deg.nc')
     if not skip_cv:
+        print('running GridSearchCV first:')
         cvr = run_ML(**train_args)
         model = cvr.best_estimator_
         ml_params = model.get_params()
@@ -53,9 +55,14 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
         rds_train = run_ML(**args)
         model = rds_train
     else:
-        ml_params=dict(alpha=2.0, coef0=1, degree=2, gamma=1.0, kernel='rbf',
-                       kernel_params=None)
+        ml_params_krr=dict(alpha=2.0, coef0=1, degree=2, gamma=1.0, kernel='rbf',
+                           kernel_params=None)
         args = train_args.copy()
+        if model_params is not None:
+            if model_params == 'KRR':
+                ml_params = ml_params_krr
+        else:
+            ml_params = None
         args.update(cv=None, gridsearch=False, ml_params=ml_params)
         rds_train = run_ML(**args)
         model = rds_train
@@ -66,13 +73,25 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
     X = Pset.pre_process()
     Target = TargetArray(**test_args, loadpath=work_chaim)
     y = Target.pre_process()
-    rds_test = xr.Dataset()
-    rds_test['original'] = y
 #    if not skip_cv:
 #        predict = y.copy(data=model.predict(X))
 #    else:
-    predict = model.predict(X)
+    if lms is not None:
+        predict = run_model_with_shifted_plevels(model, X, y, Target,
+                                                 plevel=plevels, lms=lms,
+                                                 just_predict=True)
+        predict = predict.rename({'regressors': 'lat'})
+        predict['lat'] = y.unstack('samples')['lat']
+        predict['level'] = y.unstack('samples')['level']
+        predict = predict.stack(regressors=['lat', 'level'])
+    else:
+        predict = model.predict(X)
     predict = predict.rename({'regressors': 'samples'})
+    times = dim_intersection([predict, y], dropna=True)
+    y = y.sel(time=times)
+    predict = predict.sel(time=times)
+    rds_test = xr.Dataset()
+    rds_test['original'] = y
     rds_test['predict'] = predict
     r2 = r2_score(y, predict, multioutput='raw_values')
     rds_test['r2'] = xr.DataArray(r2, dims=['samples'])
@@ -109,6 +128,7 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
     rds_test['X'] = X
     print(model)
     das = [x for x in rds_train.results_ if x in rds_test]
+    # don't use r2...
     rds_train = rds_train.results_[das]
     rds = xr.concat([rds_train, rds_test], 'time')
     rds = rds.sortby('time')
@@ -639,7 +659,8 @@ def process_gridsearch_results(GridSearchCV):
     return ds
 
 
-def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None):
+def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None,
+                                   just_predict=False):
     import xarray as xr
     import numpy as np
     from aux_functions_strat import text_blue
@@ -682,10 +703,16 @@ def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None):
             cv_ds = process_gridsearch_results(model)
             level_results.append(cv_ds)
         else:
-            model.fit(Xcopy, y_shifted, verbose=False)
-            level_results.append(model.results_)
+            if just_predict:
+                pre = model.predict(Xcopy)
+                level_results.append(pre)
+            else:
+                model.fit(Xcopy, y_shifted, verbose=False)
+                level_results.append(model.results_)
     rds = xr.concat(level_results, dim='level')
     print(text_blue('Done!'))
+    if just_predict:
+        return rds
     if isinstance(model, GridSearchCV):
         rds['level'] = levels
         rds.attrs['model_name'] = p.model_name
