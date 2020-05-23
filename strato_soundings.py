@@ -156,6 +156,7 @@ def calc_cold_point_from_sounding(path=sound_path, times=['1993', '2017'],
     import xarray as xr
 #     import seaborn as sns
     from aux_functions_strat import deseason_xr
+    from aux_functions_strat import path_glob
 
     def return_one_station(file_obj, name, times):
         print('proccessing station {}:'.format(name))
@@ -195,7 +196,7 @@ def calc_cold_point_from_sounding(path=sound_path, times=['1993', '2017'],
         return cold
 
     da_list = []
-    for file in path.glob('*.nc'):
+    for file in path_glob(path, '*_derived.nc'):
         if file.is_dir():
             continue
         name = file.as_posix().split('/')[-1].split('.')[0]
@@ -234,13 +235,14 @@ def siphon_igra2_to_xarray(station, path=sound_path,
     import xarray as xr
     from urllib.error import URLError
     import logging
+    from aux_functions_strat import path_glob
 
     logger = logging.getLogger('strato_sounding')
 #    logging.basicConfig(filename=path / 'siphon.log', level=logging.INFO,
 #                        format='%(asctime)s  %(levelname)-10s %(processName)s  %(name)s %(message)s')
     # check for already d/l files:
-    names = [x.as_posix().split('/')[-1].split('.')[0] for x in
-             path.rglob('*.nc')]
+    files = path_glob(path, '*_derived.nc')
+    names = [x.as_posix().split('/')[-1].split('.')[0] for x in files]
     if station in names:
         logging.warning('station {} already downloaded, skipping'.format(station))
         return '1'
