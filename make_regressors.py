@@ -236,11 +236,10 @@ def _produce_wind_shear(source='singapore', savepath=None):
 
 
 def _download_CH4(filename='ch4_mm.nc', loadpath=None,
-                  trend=False, savepath=None):
+                  trend=False, savepath=None, interpolate=False):
     import xarray as xr
     import pandas as pd
-    import ftputil
-    from pathlib import Path
+    import wget
     filepath = loadpath / filename
     if filepath.is_file():
         print('CH4 monthly means from NOAA ERSL already d/l and saved!')
@@ -249,11 +248,9 @@ def _download_CH4(filename='ch4_mm.nc', loadpath=None,
         # else d/l the file and fObsirst read it to df (pandas),
         # then to xarray then save as nc:
     else:
-        filename_todl = 'ch4_mm_gl.txt'
-        with ftputil.FTPHost('aftp.cmdl.noaa.gov', 'anonymous', '') as ftp_host:
-            ftp_host.chdir('/products/trends/ch4/')
-            ftp_host.download(filename_todl, loadpath.as_posix() + filename_todl)
-        ch4_df = pd.read_csv(loadpath / filename_todl, delim_whitespace=True,
+        link = 'ftp://aftp.cmdl.noaa.gov/products/trends/ch4/ch4_mm_gl.txt'
+        wget.download(link, out=loadpath.as_posix() + '/ch4_mm_gl.txt')
+        ch4_df = pd.read_csv(loadpath / 'ch4_mm_gl.txt', delim_whitespace=True,
                              comment='#',
                              names=['year', 'month', 'decimal', 'average',
                                     'average_unc', 'trend', 'trend_unc'])
@@ -276,6 +273,10 @@ def _download_CH4(filename='ch4_mm.nc', loadpath=None,
 #        print_saved_file('trend ch4_index.nc', savepath)
 #    else:
     ch4 = ch4_xr.trend
+    if interpolate:
+        dt = pd.date_range(start='1979-01-01', end='2019-12-01', freq='MS')
+        ch4 = ch4.interp(time=dt)
+        ch4 = ch4.interpolate_na(dim='time', method='spline')
     if savepath is not None:
         ch4.to_netcdf(savepath / 'ch4_index.nc', 'w')
         print_saved_file('ch4_index.nc', savepath)
@@ -1116,6 +1117,25 @@ def create_nino_time_mask(loadpath=reg_path, thresh=0.5, event='la_nina',
     if plot:
         index.plot()
     return da
+
+
+def create_season_avg_nino(season='DJF'):
+    import xarray as xr
+    import pandas as pd
+    ds = load_all_regressors()
+    nino = ds['anom_nino3p4'].dropna('time')
+    nino_djf=nino_djf=nino.sel(time=nino['time.season']=='DJF')
+    df= nino_djf.to_dataframe()
+    dfr = df.resample('Q-NOV').mean().dropna()
+    start = '{}-12-01'.format(dfr.index.year.min() - 1)
+    end = '{}-12-01'.format(dfr.index.year.max() - 1)
+    new_time = pd.date_range(start=start, end=end, freq='12MS')
+    dfr = dfr.set_index(new_time)
+    new_time = pd.date_range(start=dfr.index.min(), end=dfr.index.max(), freq='MS')
+    dfr = dfr.reindex(new_time).ffill()
+    dfr.index.name = 'time'
+    nino = dfr.to_xarray()['anom_nino3p4']
+    return nino
 
 
 def _make_nc_files_run_once(loadpath=work_chaim, savepath=None):
