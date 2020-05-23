@@ -5,7 +5,7 @@ Created on Fri Nov 23 12:06:16 2018
 # need to add ERA5 regriding 4Xdaily - to monthly mean data
 @author: shlomi
 """
-
+from strat_paths import work_chaim
 
 #def transform_l137_ml_to_pressure(ds, l137_path):
 #    """transform model levels from int numbers to hPa full pressure levels"""
@@ -19,7 +19,89 @@ Created on Fri Nov 23 12:06:16 2018
 #    out = xr.apply_ufunc(pressure_from_ab, x, a, b, n, join='outer', output_core_dims=['n', 'time', 'latitude', 'longitude'])
 #    return out
 
+class Constants:
+    def __init__(self):
+        import astropy.units as u
+        # Specific gas const for water vapour, J kg^{-1} K^{-1}:
+        self.Rs_v = 461.52 * u.joule / (u.kilogram * u.Kelvin)
+        # Specific gas const for dry air, J kg^{-1} K^{-1}:
+        self.Rs_da = 287.05 * u.joule / (u.kilogram * u.Kelvin)
+        self.MW_dry_air = 28.9647  * u.gram / u.mol  # gr/mol
+        self.MW_water = 18.015 * u.gram / u.mol  # gr/mol
+        self.Water_Density = 1000.0 * u.kilogram / u.m**3
+        self.Epsilon = self.MW_water / self.MW_dry_air  # Epsilon=Rs_da/Rs_v;
 
+    def show(self):
+        from termcolor import colored
+        for attr, value in vars(self).items():
+            print(colored('{} : '.format(attr), color='blue', attrs=['bold']), end='')
+            print(colored('{:.2f}'.format(value), color='white', attrs=['bold']))
+
+
+def convert_mixing_ratio_to_ppmv(MR):
+    from metpy.units import units
+    try:
+        mr_unit = MR.attrs['units']
+    except KeyError:
+        mr_unit = 'g/kg'
+    MR_values = MR.values * units(mr_unit)
+    C = Constants()
+    ratio = C.MW_dry_air / C.MW_water
+    if units(mr_unit).dimensionless:
+        # mr in kg/kg:
+        ratio = ratio * 1e6
+    else:
+        # mr in g/kg:
+        ratio = ratio * 1e3
+    PPMV = MR_values * ratio
+    da = MR.copy(data=PPMV.magnitude)
+    da.attrs['units'] = 'ppmv'
+    da.attrs['long_name'] = 'parts per million volume'
+    da.attrs.pop('standard_name')
+    return da
+
+
+def convert_specific_humidity_to_mixing_ratio(Q):
+    from metpy.calc import mixing_ratio_from_specific_humidity
+    from metpy.units import units
+    try:
+        q_unit = Q.attrs['units']
+    except KeyError:
+        q_unit = 'g/kg'
+    q_values = Q.values * units(q_unit)
+    MR = mixing_ratio_from_specific_humidity(q_values)
+    da = Q.copy(data=MR.magnitude)
+    da.attrs['units'] = q_unit
+    da.attrs['long_name'] = 'Mixing Ratio'
+    return da
+
+
+def interpolate_model_levels_to_swoosh_levels(path=work_chaim):
+    import xarray as xr
+    from pathlib import Path
+    cwd = Path().cwd()
+    sw = xr.open_dataset(path / 'swoosh_latpress-10deg.nc')
+    levels = sw.level.sel(level=slice(100, 1))
+    levels_vals = levels.values
+    li = [get_2_model_levels_for_pf(cwd, x) for x in levels_vals]
+    ds = xr.open_dataset(path / 'era5_Q_ML_MM_1979-2019_levels_1-70.nc')
+    for i, ns in enumerate(li):
+        print('proccessing {:.2f} level'.format(levels_vals[i]))
+        da = ds['q'].sel(level=slice(*ns))
+        transform_model_levels_to_pressure(path, da, plevel=levels_vals[i],
+                                           mm=True)
+    print('done!')
+    return
+
+
+
+def get_2_model_levels_for_pf(path, level):
+    pf = read_L137_to_ds(path)['pf'].to_dataframe()
+    ns = (pf['pf'] - level).abs().sort_values().head(2).sort_index().index.values
+    print(pf.loc[ns[0]].values, pf.loc[ns[1]].values)
+    return ns
+
+    
 def transform_model_levels_to_pressure(path, field_da, plevel=85.0, mm=True):
     """takes a field_da (like t, u) that uses era5 L137 model levels and
     interpolates it using pf(only monthly means) to desired plevel"""
