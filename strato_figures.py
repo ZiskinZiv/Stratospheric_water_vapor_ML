@@ -1236,6 +1236,63 @@ def plot_enso_events(path=work_chaim, year='1984'):
     fg.fig.suptitle('From MLR on {}-2019 data'.format(year))
     return fg
 
+
+def plot_enso_scatter_era5(path=work_chaim, qbo_lag=2, plot=True):
+    """regress out CH4 and qbo_cdas at lag 2/3? from ERA5-q,
+    level 82.54 hPa and scatter plot with ENSO seasons/annual"""
+    from make_regressors import load_all_regressors
+    from aux_functions_strat import normalize_xr
+    from aux_functions_strat import lat_mean
+    from sklearn.linear_model import LinearRegression
+    from aux_functions_strat import deseason_xr
+    from aux_functions_strat import dim_intersection
+    from make_regressors import create_season_avg_nino
+    import xarray as xr
+    # load era5_q:
+    era5_q = xr.load_dataset(path/'era5_wv_anoms_82hPa.nc')
+    era5_q = era5_q.mean('lon')
+    era5_q = era5_q.sel(lat=slice(-15, 15))
+    era5_q = lat_mean(era5_q).q
+    # load regressors:
+    ds = load_all_regressors()
+    # regress out ch4:
+    ch4 = normalize_xr(ds['ch4'].dropna('time'), norm=5)
+#    qbos = deseason_xr(qbos.to_array('regressors'), how='mean').to_dataset('regressors')
+#    radio = radio.sel(time=new_time)
+    lr = LinearRegression()
+#    X = qbos.to_array('regressors').T
+    X = ch4.values.reshape(-1,1)
+    lr.fit(X, era5_q.squeeze())
+    era5_q = era5_q - lr.predict(X)
+    # regress out qbo at lag = qbo_lag:
+    qbo = deseason_xr(ds['qbo_cdas'].dropna('time'), how='mean')
+    qbo = qbo.shift(time=qbo_lag)
+    new_time = dim_intersection([qbo, era5_q], 'time')
+    qbo = qbo.sel(time=new_time)
+    era5_q = era5_q.sel(time=new_time)
+    lr = LinearRegression()
+    X = qbo.values.reshape(-1, 1)
+    lr.fit(X, era5_q.squeeze())
+    era5_q = era5_q - lr.predict(X)
+    # scatter plot with enso:
+    enso = ds['anom_nino3p4'].dropna('time')
+    enso = create_season_avg_nino()
+    enso = enso.sel(time=new_time)
+    if plot:
+        fig, axes = plt.subplots(2,2, sharex=True, sharey=True, figsize=(10, 8))
+        seasons = ['JJA', 'MAM', 'SON', 'DJF']
+        fig.suptitle('ERA5 specific humidity (1979-2019) at 82.54 hPa (CH4 and QBO_CDAS (lag-2) regressed out) vs. ENSO')
+        for i, ax in enumerate(axes.flatten()):
+            x = enso.sel(time=enso['time.season']==seasons[i])
+            y = era5_q.sel(time=era5_q['time.season']==seasons[i])
+            ax.scatter(x=x, y=y)
+            ax.set_title(seasons[i])
+            ax.grid()
+            ax.set_ylabel('ERA5 q anomalies [ppmv]')
+            ax.set_xlabel('ENSO 3.4')
+        for ax in fig.get_axes():
+            ax.label_outer()
+    return fig
 # Check Diallo 2018 et al:
 # 1)do lms with ENSO, QBO, AOD (or vol or aot)
 # 2)do run_ML with them (lat-pressure only)
