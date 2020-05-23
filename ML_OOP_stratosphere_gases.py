@@ -348,6 +348,10 @@ def run_level_month_shift(plags=['qbo_cdas'],
         rds = run_ML(time_period=time_period, area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
                      regressors=plags, swoosh_latlon=latlon)
+    elif species == 'q':
+        rds = run_ML(time_period=time_period, species='q', area_mean=True,
+                     lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
+                     regressors=plags, data_file='era5_wv_anoms_82hPa.nc')
     elif species == 't':
         rds = run_ML(time_period=time_period, species='t', area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
@@ -891,21 +895,24 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         rds['months_shift'] = shifts
         rds['level_month_shift'] = rds.months_shift.isel(
                 months_shift=rds.r2_adj.argmax(dim='months_shift'))
-        fg = rds.r2_adj.T.plot.contourf(yscale='log', yincrease=False,
-                                          levels=21, col='reg_shifted',
-                                          cmap='viridis', vmin=0.0,
-                                          extend=None, vmax=rds.r2.max())
-        for n_regs in range(len(fg.axes[0])):
-            rds.isel(reg_shifted=n_regs).level_month_shift.plot.line('r.-',
-                                                                     y='level',
-                                                                     yincrease=False,
-                                                                     ax=fg.axes[0][n_regs])
-        ax = plt.gca()
-        # ax.set_title(', '.join(X.regressors.values.tolist()))
-        plt.suptitle(', '.join(X.regressors.values.tolist()),
-                     fontweight='bold')
-        plt.subplots_adjust(top=0.85, right=0.82)
-        ax.yaxis.set_major_formatter(ScalarFormatter())
+        if rds.level.size == 1:
+            print('lag at {} : {}'.format(rds.level.values.item(), rds['level_month_shift'].values.item()))
+        else:
+            fg = rds.r2_adj.T.plot.contourf(yscale='log', yincrease=False,
+                                            levels=21, col='reg_shifted',
+                                            cmap='viridis', vmin=0.0,
+                                            extend=None, vmax=rds.r2.max())
+            for n_regs in range(len(fg.axes[0])):
+                rds.isel(reg_shifted=n_regs).level_month_shift.plot.line('r.-',
+                                                                         y='level',
+                                                                         yincrease=False,
+                                                                         ax=fg.axes[0][n_regs])
+            ax = plt.gca()
+            # ax.set_title(', '.join(X.regressors.values.tolist()))
+            plt.suptitle(', '.join(X.regressors.values.tolist()),
+                         fontweight='bold')
+            plt.subplots_adjust(top=0.85, right=0.82)
+            ax.yaxis.set_major_formatter(ScalarFormatter())
         print('Done!')
         return rds
 #    if (p.special_run is not None
