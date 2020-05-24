@@ -3130,7 +3130,9 @@ class PredictorSet(Dataset):
         self = self.select(self.regressors, base_preds=True)
         # 3) select time period
         # self = self.select_times(self.time_period)
-        self = self.select_times(['1984', '2019']) # the maximum
+        if self.time_period is None:
+            self.time_period = ['1984', '2019']
+        self = self.select_times(self.time_period) # the maximum
         # 4) deseason
         self = self.deseason()
         # 5) normalize
