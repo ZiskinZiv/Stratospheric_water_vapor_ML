@@ -94,7 +94,6 @@ def interpolate_model_levels_to_swoosh_levels(path=work_chaim):
     return
 
 
-
 def get_2_model_levels_for_pf(path, level):
     pf = read_L137_to_ds(path)['pf'].to_dataframe()
     ns = (pf['pf'] - level).abs().sort_values().head(2).sort_index().index.values
