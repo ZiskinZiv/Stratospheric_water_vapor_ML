@@ -56,7 +56,7 @@ def convert_mixing_ratio_to_ppmv(MR):
     PPMV = MR_values * ratio
     da = MR.copy(data=PPMV.magnitude)
     da.attrs['units'] = 'ppmv'
-    da.attrs['long_name'] = 'parts per million volume'
+    da.attrs['long_name'] = 'Mixing Ratio'
     da.attrs.pop('standard_name')
     return da
 
@@ -100,7 +100,7 @@ def get_2_model_levels_for_pf(path, level):
     print(pf.loc[ns[0]].values, pf.loc[ns[1]].values)
     return ns
 
-    
+
 def transform_model_levels_to_pressure(path, field_da, plevel=85.0, mm=True):
     """takes a field_da (like t, u) that uses era5 L137 model levels and
     interpolates it using pf(only monthly means) to desired plevel"""
@@ -147,12 +147,12 @@ def transform_model_levels_to_pressure(path, field_da, plevel=85.0, mm=True):
     return da
 
 
-def create_model_levels_map_from_surface_pressure(work_path):
+def create_model_levels_map_from_surface_pressure(l137_path, work_path):
     import numpy as np
     import xarray as xr
     """takes ~24 mins for monthly mean with 1.25x1.25 degree for full 137
     levels,~=2.9GB file. Don't try with higher sample rate"""
-    ds = read_L137_to_ds(work_path)
+    ds = read_L137_to_ds(l137_path)
     a = ds.a.values
     b = ds.b.values
     n = ds.n.values
@@ -164,7 +164,7 @@ def create_model_levels_map_from_surface_pressure(work_path):
     sp_np = sp.values
     for t in range(sp.time.size):
         record = sp.time.isel({'time': t})
-        print('processing # record {} ({})'.format(t, record.dt.strftime('%Y-%m')))
+        print('processing # record {} ({})'.format(t, record.dt.strftime('%Y-%m').values.item()))
         for lat in range(sp.latitude.size):
             for lon in range(sp.longitude.size):
                 ps = sp_np[t, lat, lon]
