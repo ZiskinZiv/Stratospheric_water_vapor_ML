@@ -351,7 +351,7 @@ def run_level_month_shift(plags=['qbo_cdas'],
     elif species == 'q':
         rds = run_ML(time_period=time_period, species='q', area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
-                     regressors=plags, data_file='era5_wv_anoms_82hPa.nc')
+                     regressors=plags, data_file='era5_q_82hPa_ppmv_anoms.nc')
     elif species == 't':
         rds = run_ML(time_period=time_period, species='t', area_mean=True,
                      lat_slice=lslice, special_run={'optimize_reg_shift': lag_period},
@@ -2963,7 +2963,7 @@ def sort_predictors_list(pred_list):
 
 class PredictorSet(Dataset):
     def __init__(self, *args, sample_dim='time', feature_dim='regressors',
-                 loadpath=None, verbose=False, reg_shift=None, season=None,
+                 loadpath=None, verbose=False, reg_time_shift=None, season=None,
                  deseason_dict=None, regressors=None, time_period=None,
                  **kwargs):
         super().__init__(*args)
@@ -2974,7 +2974,7 @@ class PredictorSet(Dataset):
         self.feature_dim = feature_dim
         self.regressors = regressors
         self.time_period = time_period
-        self.reg_shift = reg_shift
+        self.reg_time_shift = reg_time_shift
         self.season = season
 
     def from_dict(self, d):
@@ -3138,8 +3138,9 @@ class PredictorSet(Dataset):
         # 5) normalize
         self = self.normalize()
         # 6) optional : reg_shift
-        if self.reg_shift is not None:
-            self = self.reg_shift(self.reg_shift)
+        if self.reg_time_shift is not None:
+            self = self.reg_shift(self.reg_time_shift)
+            self.regressors = [x for x in self.data_vars]
         # 7) optional: season selection
         if self.season is not None:
             self = self.select_season(self.season)
