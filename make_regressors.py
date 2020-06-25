@@ -997,6 +997,12 @@ def _produce_moi2(loadpath=reg_path, savepath=reg_path):
     return da
 
 
+#def _produce_ncp(loadpath=reg_path):
+#    import pandas as pd
+#    df = pd.read_csv(loadpath/'ncp.txt', delim_whitespace=True)
+#    df.columns = ['year', 'month', 'ncp']
+    
+
 def _produce_mei_v2(loadpath=reg_path, savepath=reg_path):
     import pandas as pd
     df = pd.read_csv(loadpath / 'meiv2.txt',
