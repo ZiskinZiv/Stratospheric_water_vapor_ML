@@ -355,11 +355,14 @@ def plot_figure_4(path=work_chaim):
 
 
 def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
-                        bust_lines=True, st_year=None, save=True):
+                        bust_lines=True, st_year=None, lat_slice=[-20, 20],
+                        save=True):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     import math
     rds = xr.load_dataset(path / ncfile)
+    if lat_slice is not None:
+        rds = rds.sel(lat=slice(*lat_slice))
     species = ncfile.split('.')[0].split('_')[1]
     regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
     if species == 'H2O':
