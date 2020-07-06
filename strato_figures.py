@@ -183,10 +183,35 @@ def change_xticks_years(ax, start=1984, end=2018):
     return ax
 
 
+def plot_predictor_corr_heatmap(save=True):
+    import seaborn as sns
+    import numpy as np
+    df = plot_reg_correlation_heatmap(
+        regs=[
+            'qbo_cdas',
+            'anom_nino3p4',
+            'era5_bdc70',
+            'radio_cold_no_qbo',
+            'era5_t500'],
+        return_df=True)
+    df.columns = ['QBO', 'ENSO', 'BDC', 'Radio_CPT', 'T500']
+    mask = np.triu(np.ones_like(df.corr(), dtype=np.bool))
+    f, ax = plt.subplots(figsize=(11, 9))
+    g = sns.heatmap(df.corr(), annot=True, cmap=divsci.Vik_20.mpl_colormap,
+                    center=0, fmt=".2f", vmax=1.0, mask=mask,
+                    square=True, cbar_kws={"shrink": .5}, ax=ax)
+    g.set_yticklabels(g.get_yticklabels(), rotation = 45, fontsize = 12)
+    f.tight_layout()
+    if save:
+        filename = 'predictor_correlation_heatmap.png'
+    plt.savefig(savefig_path / filename, bbox_inches='tight')
+    return df
+
+
 def plot_reg_correlation_heatmap(
         regs=['qbo_cdas', 'anom_nino3p4', 'era5_bdc70', 'era5_bdc82',
               'era5_t500', 'radio_cold', 'radio_cold_no_qbo'],
-        lms=None, plevel=82, time_period=['1984', '2019']):
+        lms=None, plevel=82, time_period=['1984', '2019'], return_df=False):
     import seaborn as sns
     from ML_OOP_stratosphere_gases import PredictorSet
     Pset = PredictorSet(regressors=regs,time_period=time_period,
@@ -204,6 +229,8 @@ def plot_reg_correlation_heatmap(
             ds.attrs[reg] = lag
         ds.attrs['level_shifted'] = plevel
     df = ds.to_dataframe()
+    if return_df:
+        return df
     g = sns.heatmap(df.corr(),annot=True,cmap='bwr',center=0)
     g.set_xticklabels(g.get_xticklabels(), rotation = 45, fontsize = 12)
     if lms is not None:
