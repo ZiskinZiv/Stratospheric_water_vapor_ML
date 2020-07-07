@@ -780,7 +780,7 @@ def lat_mean(xarray, method='cos', dim='lat', copy_attrs=True):
             da_mean.attrs = da.attrs
         return da_mean
 
-    xarray = xarray.transpose(..., 'lat')
+    xarray = xarray.transpose(..., dim)
     if isinstance(xarray, xr.DataArray):
         xarray = mean_single_da(xarray)
     elif isinstance(xarray, xr.Dataset):

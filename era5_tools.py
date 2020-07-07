@@ -57,7 +57,10 @@ def convert_mixing_ratio_to_ppmv(MR):
     da = MR.copy(data=PPMV.magnitude)
     da.attrs['units'] = 'ppmv'
     da.attrs['long_name'] = 'Mixing Ratio'
-    da.attrs.pop('standard_name')
+    try:
+        da.attrs.pop('standard_name')
+    except KeyError:
+        pass
     return da
 
 
