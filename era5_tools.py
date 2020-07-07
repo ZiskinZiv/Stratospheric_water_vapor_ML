@@ -60,6 +60,7 @@ def convert_mixing_ratio_to_ppmv(MR):
     try:
         da.attrs.pop('standard_name')
     except KeyError:
+        print('no attrs, did you remember to keep_attrs=True?')
         pass
     return da
 
