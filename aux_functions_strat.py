@@ -409,6 +409,17 @@ def custom_stack_xr(da, dim_not_stacked='time'):
     return stacked_da, stacked_dims, mindex
 
 
+def get_unique_index(da, dim='time', verbose=False):
+    import numpy as np
+    before = da[dim].size
+    _, index = np.unique(da[dim], return_index=True)
+    da = da.isel({dim: index})
+    after = da[dim].size
+    if verbose:
+        print('dropped {} duplicate coord entries.'.format(before-after))
+    return da
+
+
 def xvar(da, dim):
     """accepts dataarray (xarray) and computes the variance across a dim"""
     temp = abs(da - da.mean(dim))**2
