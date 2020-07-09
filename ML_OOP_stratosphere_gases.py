@@ -32,7 +32,7 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
                           test_period=['1984', '2004-07'], model_name='KRR',
                           regressors=['ch4', 'anom_nino3p4', 'qbo_cdas'],
                           param_grid=None, skip_cv=False, plevels=None,
-                          model_params='KRR', lms=None):
+                          model_params='KRR', lms=None, return_just_test=False):
     import xarray as xr
     from sklearn.metrics import r2_score
     from aux_functions_strat import xr_order
@@ -132,7 +132,10 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
     rds_train = rds_train.results_[das]
     rds = xr.concat([rds_train, rds_test], 'time')
     rds = rds.sortby('time')
-    return rds
+    if return_just_test:
+        return rds_test
+    else:
+        return rds
 
 
 class Parameters:
