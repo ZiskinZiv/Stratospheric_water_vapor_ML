@@ -383,7 +383,7 @@ def plot_figure_4(path=work_chaim):
 
 def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
                         bust_lines=True, st_year=None, lat_slice=[-20, 20],
-                        save=True):
+                        save=True, vmax=None):
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     import math
@@ -413,7 +413,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
         unit = r'm$\cdot$sec$^{-1}$'
     fg = plot_like_results(rds, plot_key='predict_{}-time'.format(geo),
                            level=level, cmap=predict_cmap, extend=None,
-                           no_colorbar=True)
+                           no_colorbar=True, vmax=vmax)
     top_ax = fg.axes[0][0]
     mid_ax = fg.axes[1][0]
     bottom_ax = fg.axes[-1][0]
