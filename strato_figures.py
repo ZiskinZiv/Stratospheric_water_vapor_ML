@@ -1323,6 +1323,52 @@ def plot_enso_scatter_era5(path=work_chaim, qbo_lag=2, plot=True):
         for ax in fig.get_axes():
             ax.label_outer()
     return fig
+
+
+def plot_fig1_PR2019(path=work_chaim, plevel=82, time=['1991', '2018']):
+    import xarray as xr
+    from make_regressors import load_all_regressors
+    from aux_functions_strat import lat_mean
+    from aux_functions_strat import deseason_xr
+    sw = xr.load_dataset(path / 'swoosh_latpress-2.5deg.nc')['combinedanomfillanomh2oq']
+    sw = sw.sel(level=plevel, method='nearest')
+    sw = sw.sel(lat=slice(-60, 60))
+    sw = lat_mean(sw).reset_coords(drop=True)
+    cpt = load_all_regressors()['radio_cold'].dropna('time')
+    cptropt = xr.open_dataset(
+        work_chaim /
+        'swoosh-v02.6-198401-201912/swoosh-v02.6-198401-201912-latpress-2.5deg-L31.nc',
+        decode_times=False)['cptropt']
+    cptropt['time'] = sw.time
+    cptropt = cptropt.sel(lat=slice(-15, 15))
+    cptropt = lat_mean(cptropt).reset_coords(drop=True)
+    cptropt = deseason_xr(cptropt, how='mean')
+    fig, ax = plt.subplots(figsize=(16,6))
+    df = sw.to_dataframe(name='SWOOSH')
+    df['CPT'] = cpt.to_dataframe()
+    df['CPT_Sean'] = cptropt.to_dataframe()
+#    swln = sw.plot(ax = ax)
+#    cptln = cpt.plot(ax=ax)
+#    ax.legend([swln[0],cptln[0]], ['SWOOSH', 'CPT_no_qbo'])
+    if time is not None:
+        df = df.loc['1991':'2018']
+    df['SWOOSH'].plot(ax=ax, color='blue', label='SWOOSH')
+    twin = ax.twinx()
+    df['CPT'].plot(ax=twin, color='red', label='CPT')
+    df['CPT_Sean'].plot(ax=twin, color='magenta', label='CPT_Sean')
+
+#    ax = df.plot(ax=ax, secondary_y='CPT')
+    ax.tick_params(axis='y', colors='blue')
+    twin.tick_params(axis='y', colors='red')
+    ax.set_ylabel('H2O anomalies [ppmv]', color='blue')
+    twin.set_ylabel('CPT anomalies [K]', color='red')
+    ax.legend(loc=2)
+    twin.legend(loc=1)
+    ax.grid()
+    ax.set_title('H2O anomalies for the 60S to 60N from SWOOSH and the CPT anomalies from radiosonde')
+    return df
+
+
 # Check Diallo 2018 et al:
 # 1)do lms with ENSO, QBO, AOD (or vol or aot)
 # 2)do run_ML with them (lat-pressure only)
