@@ -1325,7 +1325,8 @@ def plot_enso_scatter_era5(path=work_chaim, qbo_lag=2, plot=True):
     return fig
 
 
-def plot_fig1_PR2019(path=work_chaim, plevel=82, time=['1991', '2018']):
+def plot_fig1_PR2019(path=work_chaim, plevel=82, time=['1991', '2018'],
+                     rolling=3):
     import xarray as xr
     from make_regressors import load_all_regressors
     from aux_functions_strat import lat_mean
@@ -1335,10 +1336,15 @@ def plot_fig1_PR2019(path=work_chaim, plevel=82, time=['1991', '2018']):
     sw = sw.sel(lat=slice(-60, 60))
     sw = lat_mean(sw).reset_coords(drop=True)
     cpt = load_all_regressors()['radio_cold'].dropna('time')
+    # cptropt = xr.open_dataset(
+    #     work_chaim /
+    #     'swoosh-v02.6-198401-201912/swoosh-v02.6-198401-201912-latpress-2.5deg-L31.nc',
+    #     decode_times=False)['cptropt']
     cptropt = xr.open_dataset(
         work_chaim /
-        'swoosh-v02.6-198401-201912/swoosh-v02.6-198401-201912-latpress-2.5deg-L31.nc',
+        'swoosh-v02.6-198401-202003-latpress-2.5deg-L31.nc',
         decode_times=False)['cptropt']
+    cptropt=cptropt.sel(time=slice(0,419))
     cptropt['time'] = sw.time
     cptropt = cptropt.sel(lat=slice(-15, 15))
     cptropt = lat_mean(cptropt).reset_coords(drop=True)
@@ -1354,9 +1360,14 @@ def plot_fig1_PR2019(path=work_chaim, plevel=82, time=['1991', '2018']):
         df = df.loc['1991':'2018']
     df['SWOOSH'].plot(ax=ax, color='blue', label='SWOOSH')
     twin = ax.twinx()
-    df['CPT'].plot(ax=twin, color='red', label='CPT')
-    df['CPT_Sean'].plot(ax=twin, color='magenta', label='CPT_Sean')
-
+    if rolling is not None:
+        df['CPT_mean3'] = df['CPT'].rolling(rolling, center=False).mean()
+        df['CPT_Sean_mean3'] = df['CPT_Sean'].rolling(rolling, center=False).mean()
+        df['CPT_mean3'].plot(ax=twin, color='red', label='CPT_3')
+        df['CPT_Sean_mean3'].plot(ax=twin, color='magenta', label='CPT_Sean_3')
+    else:
+        df['CPT'].plot(ax=twin, color='red', label='CPT')
+        df['CPT_Sean'].plot(ax=twin, color='magenta', label='CPT_Sean')
 #    ax = df.plot(ax=ax, secondary_y='CPT')
     ax.tick_params(axis='y', colors='blue')
     twin.tick_params(axis='y', colors='red')
