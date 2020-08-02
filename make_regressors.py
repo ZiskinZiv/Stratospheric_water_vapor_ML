@@ -867,7 +867,7 @@ def _produce_BDC(loadpath, plevel=70, savepath=None):
     return bdc
 
 
-def _produce_radio_cold(savepath=None, no_qbo=False):
+def _produce_radio_cold(savepath=None, no_qbo=False, rolling=None):
     from strato_soundings import calc_cold_point_from_sounding
     from aux_functions_strat import overlap_time_xr
     from sklearn.linear_model import LinearRegression
@@ -878,9 +878,9 @@ def _produce_radio_cold(savepath=None, no_qbo=False):
             return_anom=True,
             plot=False,
             return_mean=True)
-    filename = 'radio_cold_index.nc'
+    filename_prefix = 'radio_cold'
     if no_qbo:
-        filename = 'radio_cold_no_qbo_index.nc'
+        filename_prefix = 'radio_cold_no_qbo'
         # qbos = _produce_eof_pcs(reg_path, source='era5', plot=False)
         qbos = xr.open_dataset(savepath / 'qbo_cdas_index.nc')
         new_time = overlap_time_xr(qbos, radio)
@@ -891,7 +891,11 @@ def _produce_radio_cold(savepath=None, no_qbo=False):
         X = qbos.to_array('regressors').T
         lr.fit(X, radio)
         radio = radio - lr.predict(X)
+    if rolling is not None:
+        filename_prefix += '_rolling{}'.format(rolling)
+        radio = radio.rolling(time=rolling, center=False).mean()
     if savepath is not None:
+        filename = filename_prefix + '_index.nc'
         radio.to_netcdf(savepath / filename, 'w')
         print_saved_file(filename, savepath)
     return radio
