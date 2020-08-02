@@ -387,11 +387,22 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
     from ML_OOP_stratosphere_gases import plot_like_results
     import xarray as xr
     import math
-    rds = xr.load_dataset(path / ncfile)
+    if isinstance(ncfile, str):
+        rds = xr.load_dataset(path / ncfile)
+        species = ncfile.split('.')[0].split('_')[1]
+        regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
+    elif isinstance(ncfile, xr.Dataset):
+        rds = ncfile
+        if 'H2O' in rds['original'].attrs['long_name']:
+            species = 'H2O'
+        elif 'Temperature' in rds['original'].attrs['long_name']:
+            species = 't'
+        elif 'Velocity' in rds['original'].attrs['long_name']:
+            species = 'u'
+        regs = [x for x in rds['regressors'].values]
     if lat_slice is not None:
         rds = rds.sel(lat=slice(*lat_slice))
-    species = ncfile.split('.')[0].split('_')[1]
-    regs = '_'.join(ncfile.split('.')[0].split('_')[3: -1])
+    
     if species == 'H2O':
         geo_title = {
                 'lat': r'Area-averaged (from 180$\degree$W to 180$\degree$E longitudes) combined H2O anomaly for the {} hPa pressure level'.format(level),
