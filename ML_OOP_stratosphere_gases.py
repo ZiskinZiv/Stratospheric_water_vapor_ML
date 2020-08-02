@@ -95,6 +95,7 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
     rds_test['predict'] = predict
     r2 = r2_score(y, predict, multioutput='raw_values')
     rds_test['r2'] = xr.DataArray(r2, dims=['samples'])
+    rds_test['params'] = xr.DataArray(model.coef_, dims=['samples', 'regressors'])
     r2_adj = 1.0 - (1.0 - rds_test['r2']) * (len(y) - 1.0) / \
                  (len(y) - X.shape[1])
     rds_test['r2_adj'] = r2_adj
