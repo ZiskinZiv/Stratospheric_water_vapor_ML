@@ -95,7 +95,8 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
     rds_test['predict'] = predict
     r2 = r2_score(y, predict, multioutput='raw_values')
     rds_test['r2'] = xr.DataArray(r2, dims=['samples'])
-    rds_test['params'] = xr.DataArray(model.coef_, dims=['samples', 'regressors'])
+    if not isinstance(model, ImprovedRegressor):
+        rds_test['params'] = xr.DataArray(model.coef_, dims=['samples', 'regressors'])
     r2_adj = 1.0 - (1.0 - rds_test['r2']) * (len(y) - 1.0) / \
                  (len(y) - X.shape[1])
     rds_test['r2_adj'] = r2_adj
@@ -292,8 +293,28 @@ class ML_Switcher(object):
         import numpy as np
         from sklearn.linear_model import MultiTaskElasticNetCV
         return MultiTaskElasticNetCV(random_state=42, cv=10, n_jobs=-1,
-                                alphas=np.logspace(-5, 2, 400))
+                                     alphas=np.logspace(-5, 2, 400))
 
+    def MLP(self):
+        import numpy as np
+        from sklearn.neural_network import MLPRegressor
+        self.param_grid = {'alpha': np.logspace(-5, 2, 10),
+                           'activation': ['identity', 'logistic', 'tanh', 'relu'],
+                           'hidden_layer_sizes': [(50, 50, 50), (50, 100, 50), (100,)],
+                           'learning_rate': ['constant', 'adaptive']}
+        return MLPRegressor(random_state=42, solver='lbfgs')
+    
+    def RF(self):
+        from sklearn.ensemble import RandomForestRegressor
+        import numpy as np
+        self.param_grid = {'max_depth': np.arange(10, 110, 10),
+                           'bootstrap': [True, False],
+                           'max_features': ['auto', 'sqrt'],
+                           'min_samples_leaf': [1, 2, 4],
+                           'min_samples_split': [2, 5, 10],
+                           'n_estimators': np.arange(200, 2200, 200)
+                           }
+        return RandomForestRegressor(random_state=42)
 #class ML_models:
 #
 #    def pick_model(self, model_name='LR'):
