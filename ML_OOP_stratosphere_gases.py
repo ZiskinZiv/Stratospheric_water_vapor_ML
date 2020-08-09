@@ -48,7 +48,11 @@ def train_model_and_apply(train_period=['2004-08', '2019'],
     if not skip_cv:
         print('running GridSearchCV first:')
         cvr = run_ML(**train_args)
-        model = cvr.best_estimator_
+        if lms is not None:
+            # for now support for just one level
+            model = cvr['best_model'].item()
+        else:
+            model = cvr.best_estimator_
         ml_params = model.get_params()
         args = train_args.copy()
         args.update(cv=None, gridsearch=False, ml_params=ml_params)
@@ -300,9 +304,10 @@ class ML_Switcher(object):
         from sklearn.neural_network import MLPRegressor
         self.param_grid = {'alpha': np.logspace(-5, 2, 10),
                            'activation': ['identity', 'logistic', 'tanh', 'relu'],
-                           'hidden_layer_sizes': [(50, 50, 50), (50, 100, 50), (100,)],
+                           # 'hidden_layer_sizes': [(50, 50, 50), (50, 100, 50), (100,)],
                            'learning_rate': ['constant', 'adaptive']}
-        return MLPRegressor(random_state=42, solver='lbfgs')
+        # return MLPRegressor(random_state=42, solver='lbfgs')
+        return MLPRegressor(random_state=42, solver='adam')
     
     def RF(self):
         from sklearn.ensemble import RandomForestRegressor
@@ -744,7 +749,7 @@ def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None,
         return rds
     if isinstance(model, GridSearchCV):
         rds['level'] = levels
-        rds.attrs['model_name'] = p.model_name
+        rds.attrs['model_name'] = model.estimator
         if 'H2O' in y.attrs['long_name']:
             rds.attrs['species'] = 'H2O'
         elif 'temperature' or 'Temperature' in y.attrs['long_name']:
