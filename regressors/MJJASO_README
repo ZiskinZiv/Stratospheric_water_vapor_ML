@@ -1,0 +1,21 @@
+The Files YYYY_pc_MJJASO.dat contains the MISO indices where YYYY represents years [1998-2019].
+The data is created based on IMD rainfall data for the months MAY to October [i.e. "MJJASO" ].
+
+The First Column is the day index, the second column is the value of MISO1 index, 
+the third column is the MISO2 index and the lat column is the MISO "phase" indexed from 1-8. 
+
+References: 
+
+(i) "Simulation and extended range prediction of monsoon intraseasonal oscillations in NCEP CFS/GFS version 2 framework" 
+by Sahai et al  2013 (current Science). https://www.currentscience.ac.in/cs/Volumes/104/10/1394.pdf  (Fig.13)
+
+(ii)"An Indian monsoon intraseasonal oscillations (MISO) index for real time monitoring and forecast verification"
+Suhas, E., Neena, J.M. & Goswami, B.N. Clim Dyn (2013) 40: 2605. https://doi.org/10.1007/s00382-012-1462-5
+
+Brief Description:
+MISO1 and MISO2 is created in a way similar to the "RMM" indices used to observe and track the MJO.
+The MISO1 and MISO2 indices are the first two principal components (PCs) of the extended EOF analysis based on IMD 0.25deg resolution data.
+The lag used to create the co-variance matrix in the Extended EOFs is 15 days.
+
+For further queries please email: sahai@tropmet.res.in
+

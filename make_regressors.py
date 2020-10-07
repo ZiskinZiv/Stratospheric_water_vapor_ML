@@ -547,7 +547,6 @@ def _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='singapore',
 #        print('Downloaded NOAA ENSO MEI data and saved it to: ' + filename)
 #    return nino_df
 
-
 def _download_solar_10p7cm_flux(loadpath, filename='solar_10p7cm.nc',
                                 savepath=None, index=False):
     """download the solar flux from Dominion Radio astrophysical Observatory
@@ -657,6 +656,24 @@ def _produce_strato_aerosol(loadpath, savepath=None, index=False,
 #        nao_xr.to_netcdf(path + filename)
 #        print('Downloaded nao data and saved it to: ' + filename)
 #    return nao_xr
+
+def _download_MJO_from_cpc(loadpath, filename='mjo.nc', savepath=None):
+    import requests
+    import io
+    import xarray as xr
+    import pandas as pd
+    # TODO: complete this:
+    filepath = loadpath / filename
+    if filepath.is_file():
+        print('MJO index already d/l and saved!')
+        mjo = xr.open_dataset(filepath)
+    else:
+        print('Downloading MJO index data from cpc website...')
+        url = 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_mjo_index/proj_norm_order.ascii'
+        s = requests.get(url).content
+        mjo_df = pd.read_csv(io.StringIO(s.decode('utf-8')),
+                              delim_whitespace=True, na_values='*****')
+    return mjo_df
 
 
 def _download_enso_ersst(loadpath, filename='noaa_ersst_nino.nc', index=False,
