@@ -662,6 +662,7 @@ def _download_MJO_from_cpc(loadpath, filename='mjo.nc', savepath=None):
     import io
     import xarray as xr
     import pandas as pd
+    from aux_functions_strat import save_ncfile
     # TODO: complete this:
     filepath = loadpath / filename
     if filepath.is_file():
@@ -672,8 +673,63 @@ def _download_MJO_from_cpc(loadpath, filename='mjo.nc', savepath=None):
         url = 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/daily_mjo_index/proj_norm_order.ascii'
         s = requests.get(url).content
         mjo_df = pd.read_csv(io.StringIO(s.decode('utf-8')),
-                              delim_whitespace=True, na_values='*****')
-    return mjo_df
+                              delim_whitespace=True, na_values='*****',
+                              header=1)
+        mjo_df['dt'] = pd.to_datetime(mjo_df['PENTAD'], format='%Y%m%d')
+        mjo_df = mjo_df.set_index('dt')
+        mjo_df = mjo_df.drop('PENTAD', axis=1)
+        mjo_df.index.name = 'time'
+        mjo = mjo_df.to_xarray()
+        mjo.attrs['name'] = 'MJO index'
+        mjo.attrs['source'] = url
+        save_ncfile(mjo, loadpath, 'mjo.nc')
+    return mjo
+
+
+def _read_MISO_index(loadpath, filename='miso.nc', savepath=None):
+    from aux_functions_strat import path_glob
+    from aux_functions_strat import save_ncfile
+    import pandas as pd
+    files = path_glob(loadpath, '*_pc_MJJASO.dat')
+    dfs = []
+    for file in files:
+        df = pd.read_csv(file, delim_whitespace=True, header=None)
+        df.columns=['days_begining_at_MAY1', 'miso1', 'miso2', 'phase']
+        year = file.as_posix().split('/')[-1].split('_')[0]
+        dt = pd.date_range('{}-05-01'.format(year),
+                           periods=df['days_begining_at_MAY1'].iloc[-1], freq='d')
+        df = df.set_index(dt)
+        dfs.append(df)
+    dff = pd.concat(dfs, axis=0)
+    dff = dff.sort_index()
+    dff = dff.drop('days_begining_at_MAY1', axis=1)
+    dff.index.name = 'time'
+    miso = dff.to_xarray()
+    miso.attrs['name'] = 'MISO index'
+    save_ncfile(miso, loadpath, 'miso.nc')
+    return miso
+
+
+def _read_all_indian_rain_index(
+        loadpath, filename='all_indian_rain.nc', savepath=None):
+    import pandas as pd
+    from aux_functions_strat import save_ncfile
+    df = pd.read_csv(
+        loadpath /
+        'all_indian_rain_1871-2016.txt',
+        delim_whitespace=True)
+    df = df.drop(['JF', 'MAM', 'JJAS', 'OND', 'ANN'],axis=1)
+    # transform from table to time-series:
+    df = df.melt(id_vars='YEAR', var_name='month', value_name='rain')
+    df['date'] = pd.to_datetime(df['YEAR'].astype(str) + '-' + df['month'])
+    df.set_index('date', inplace=True)
+    df = df.drop(['YEAR', 'month'], axis=1)
+    df = df.sort_index()
+    df.index.name = 'time'
+    indian = df.to_xarray()
+    indian.attrs['name'] = 'All indian rain index'
+    save_ncfile(indian, loadpath, 'indian_rain.nc')
+    return indian
 
 
 def _download_enso_ersst(loadpath, filename='noaa_ersst_nino.nc', index=False,
