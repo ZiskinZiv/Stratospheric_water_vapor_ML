@@ -17,6 +17,23 @@ def copy_coords_attrs(ds1, ds2, verbose=False):
     return ds2
 
 
+def save_ncfile(xarray, savepath, filename='temp.nc', engine=None, dtype=None,
+                fillvalue=None):
+    import xarray as xr
+    print('saving {} to {}'.format(filename, savepath))
+    if dtype is None:
+        comp = dict(zlib=True, complevel=9, _FillValue=fillvalue)  # best compression
+    else:
+        comp = dict(zlib=True, complevel=9, dtype=dtype, _FillValue=fillvalue)  # best compression
+    if isinstance(xarray, xr.Dataset):
+        encoding = {var: comp for var in xarray}
+    elif isinstance(xarray, xr.DataArray):
+        encoding = {var: comp for var in xarray.to_dataset()}
+    xarray.to_netcdf(savepath / filename, 'w', encoding=encoding, engine=engine)
+    print('File saved!')
+    return
+
+
 def query_yes_no(question, default="no"):
     """Ask a yes/no question via raw_input() and return their answer.
 
