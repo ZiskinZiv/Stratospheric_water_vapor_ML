@@ -1074,11 +1074,27 @@ def _produce_moi2(loadpath=reg_path, savepath=reg_path):
     return da
 
 
-#def _produce_ncp(loadpath=reg_path):
-#    import pandas as pd
-#    df = pd.read_csv(loadpath/'ncp.txt', delim_whitespace=True)
-#    df.columns = ['year', 'month', 'ncp']
-    
+def _produce_mei_v1(loadpath=reg_path, savepath=reg_path):
+    import pandas as pd
+    df = pd.read_csv(loadpath / 'meiv1.txt',
+                     names=['YEAR', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                     skiprows=10, delim_whitespace=True)
+    df = df.iloc[0:69]
+    df = pd.melt(df, id_vars='YEAR', var_name='month', value_name='meiv1')
+    df['month']=df['month'].astype(int)
+    df['time'] = df['YEAR'].astype(str) + '-' + df['month'].astype(str)
+    df['time'] = pd.to_datetime(df['time'])
+    df = df.set_index('time')
+    df = df.sort_index()
+    df  = df.drop(['YEAR', 'month'], axis=1)    
+    df = df.astype(float)
+    da = df.to_xarray()
+    if savepath is not None:
+        filename = 'meiv1_index.nc'
+        da.to_netcdf(savepath / filename)
+        print_saved_file(filename, savepath)
+    return da
+
 
 def _produce_mei_v2(loadpath=reg_path, savepath=reg_path):
     import pandas as pd
@@ -1090,6 +1106,7 @@ def _produce_mei_v2(loadpath=reg_path, savepath=reg_path):
     df['time'] = pd.to_datetime(df['time'])
     df = df.set_index('time')
     df = df.sort_index()
+    df = df.drop(['YEAR', 'month'], axis=1)
     da = df.to_xarray()
     if savepath is not None:
         filename = 'meiv2_index.nc'

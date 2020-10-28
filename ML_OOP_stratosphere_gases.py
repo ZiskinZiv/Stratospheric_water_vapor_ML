@@ -928,7 +928,7 @@ def run_ML(species='h2o', swoosh_field='combinedanomfillanom', model_name='LR',
         if rds.level.size == 1:
             print('lag at {} : {}'.format(rds.level.values.item(), rds['level_month_shift'].values.item()))
         else:
-            fg = rds.r2_adj.T.plot.contourf(yscale='log', yincrease=False,
+            fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
                                             levels=21, col='reg_shifted',
                                             cmap='viridis', vmin=0.0,
                                             extend=None, vmax=rds.r2.max())
