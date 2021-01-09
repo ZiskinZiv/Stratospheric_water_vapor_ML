@@ -339,7 +339,7 @@ def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
 #        cold_point = cold_point.mean('lon')
 #        cold_point = cold_point.mean('lat')
 #        # cold_point = cold_point.rolling(time=3).mean()
-#        
+#
 #        # cold_point = era5.sel(level=slice(150, 50)).min(['level', 'lat',
 #        #                                                  'lon'])
 #    else:
@@ -383,6 +383,37 @@ def _produce_CDAS_QBO(savepath=None):
         qbo.to_netcdf(savepath / 'qbo_cdas_index.nc')
         print_saved_file('qbo_cdas_index.nc', savepath)
     return qbo
+
+
+def _produce_CO2(loadpath, filename='co2.txt'):
+    import requests
+    import io
+    import xarray as xr
+    import pandas as pd
+    from aux_functions_strat import save_ncfile
+    # TODO: complete this:
+    filepath = loadpath / filename
+    if filepath.is_file():
+        print('co2 index already d/l and saved!')
+        co2 = xr.open_dataset(filepath)
+    else:
+        print('Downloading CO2 index data from cpc website...')
+        url = 'https://www.esrl.noaa.gov/gmd/webdata/ccgg/trends/co2/co2_mm_mlo.txt'
+        s = requests.get(url).content
+        co2_df = pd.read_csv(io.StringIO(s.decode('utf-8')),
+                             delim_whitespace=True, comment='#')
+        co2_df.columns = ['year', 'month', 'decimal_date', 'monthly_average', 'deseasonalized', 'days', 'days_std', 'mm_uncertainty']
+        co2_df['dt'] = pd.to_datetime(co2_df['year'].astype(str) + '-' + co2_df['month'].astype(str))
+        co2_df = co2_df.set_index('dt')
+        co2_df.index.name = 'time'
+        co2 = co2_df[['monthly_average', 'mm_uncertainty']].to_xarray()
+        co2 = co2.rename(
+            {'monthly_average': 'co2', 'mm_uncertainty': 'co2_error'})
+        co2.attrs['name'] = 'CO2 index'
+        co2.attrs['source'] = url
+        co2['co2'].attrs['units'] = 'ppm'
+        save_ncfile(co2, loadpath, 'co2_index.nc')
+    return co2
 
 
 def _produce_GHG(loadpath, savepath=None):
@@ -1086,7 +1117,7 @@ def _produce_mei_v1(loadpath=reg_path, savepath=reg_path):
     df['time'] = pd.to_datetime(df['time'])
     df = df.set_index('time')
     df = df.sort_index()
-    df  = df.drop(['YEAR', 'month'], axis=1)    
+    df  = df.drop(['YEAR', 'month'], axis=1)
     df = df.astype(float)
     da = df.to_xarray()
     if savepath is not None:
