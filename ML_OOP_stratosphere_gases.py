@@ -308,7 +308,7 @@ class ML_Switcher(object):
                            'learning_rate': ['constant', 'adaptive']}
         # return MLPRegressor(random_state=42, solver='lbfgs')
         return MLPRegressor(random_state=42, solver='adam')
-    
+
     def RF(self):
         from sklearn.ensemble import RandomForestRegressor
         import numpy as np
@@ -595,7 +595,7 @@ def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
     # if not isinstance(level, list):
     #     level = int(level)
     cvr_level = cvr.sel(level=level, method='nearest')
-        
+
     # elif isinstance(level, list) and len(level) == 2:
         # cvr_level = cvr.sel(level=slice(level[0], level[1]))
     # else:
@@ -614,7 +614,7 @@ def plot_cv_results(cvr, level=82, col_param=None, row_param=None):
         fg.fig.suptitle('mean train/test score for the {} hPa level and {} splits'.format(level, splits))
     return cvr_level
 
-    
+
 def process_gridsearch_results(GridSearchCV):
     import xarray as xr
     import pandas as pd
@@ -691,6 +691,78 @@ def process_gridsearch_results(GridSearchCV):
         for name in names:
             ds['best_{}'.format(name)] = GridSearchCV.best_params_[name]
     return ds
+
+
+def correlate_regressor_with_swoosh(path=work_chaim, regressor='qbo_cdas',
+                                    max_lag=12, lat_mean=[-5, 5],
+                                    times=['1994', '2019'],
+                                    anoms=True, sw_filled=True,
+                                    plot=True):
+    from make_regressors import load_all_regressors
+    import xarray as xr
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import ScalarFormatter
+    from aux_functions_strat import anomalize_xr
+    # load regressor:
+    reg = load_all_regressors()[regressor].dropna('time')
+    # load SWOOSH:
+    swoosh_field='combinedh2oq'
+    if sw_filled:
+        swoosh_field = 'combinedanomfillh2oq'
+        # swoosh_field = 'combinedeqfillanomfillh2oq'
+    # original_data_file='swoosh_lonlatpress-20deg-5deg.nc',
+    data_file='swoosh_latpress-2.5deg.nc'
+    sw = xr.load_dataset(path / data_file)[swoosh_field]
+    sw = sw.sel(level=slice(100,1))
+    if lat_mean is not None:
+        sw = sw.sel(lat=slice(*lat_mean)).mean('lat')
+    if times is not None:
+        sw = sw.sel(time=slice(*times))
+        reg = reg.sel(time=slice(*times))
+    if anoms:
+        reg = anomalize_xr(reg)
+        sw = anomalize_xr(sw)
+    if max_lag is not None:
+        reg_ds = regressor_shift(reg, shifts=[1, max_lag])
+        da_list = []
+        for reg_s in reg_ds:
+            da = xr.corr(sw, reg_ds[reg_s], 'time')
+            da_list.append(da)
+        corr_da = xr.concat(da_list, 'lag')
+        corr_da['lag'] = np.arange(0, max_lag + 1)
+    else:
+        corr_da = xr.corr(sw, reg, 'time')
+    if plot:
+        fig = plt.figure(figsize=(10, 12))
+        grid = plt.GridSpec(
+            2, 1, height_ratios=[
+                2, 1], hspace=0)
+        ax_pmesh = fig.add_subplot(grid[0, 0])  # plt.subplot(221)
+        ax = fig.add_subplot(grid[1, 0])  # plt.subplot(223)
+        # [left, bottom, width,
+        cbar_ax = fig.add_axes([0.90, 0.365, 0.02, 0.515])
+        corr_da.T.plot(yincrease=False, yscale='log',
+                       ax=ax_pmesh, cbar_ax=cbar_ax)
+        ax_pmesh.yaxis.set_major_formatter(ScalarFormatter())
+        df = corr_da.isel(level=slice(0, 3)).to_dataset('level').to_dataframe()
+        df.columns = ['{:.2f} hPa'.format(x) for x in df.columns]
+        df.plot(ax=ax)
+        ax.set_ylabel('correlation')
+        ax.xaxis.set_ticks(np.arange(0, max_lag + 1))
+        ax.grid()
+    fig.subplots_adjust(top=0.88,
+                        bottom=0.11,
+                        left=0.11,
+                        right=0.885,
+                        hspace=0.2,
+                        wspace=0.2)
+    fig.suptitle('Correlation between SWOOSH and QBO_CDAS (1994-2019)')
+    # df = sw.to_dataset('level').to_dataframe()
+    # df[regressor] = reg.to_dataframe()
+    # for i in np.arange(1, lags + 1):
+    #     df['{}+{}'.format(regressor, i)] = df[regressor].shift(i)
+    return corr_da
 
 
 def run_model_with_shifted_plevels(model, X, y, Target, plevel=None, lms=None,
@@ -1182,7 +1254,7 @@ def pre_proccess(params, verbose=True):
         regressors = regressors.sel(time=slice(*time_period))
     # anomlizing them:
     for reg in regressors.data_vars.keys():
-        if reg == 'ch4':
+        if reg == 'ch4' or reg == 'co2':
             regressors[reg] = aux.normalize_xr(regressors[reg], norm=1, verbose=verbose)
         elif reg == 'radio_cold' or reg == 'radio_cold_no_qbo':
             regressors[reg] = aux.deseason_xr(regressors[reg], how='mean', verbose=verbose)
@@ -3010,7 +3082,7 @@ class PredictorSet(Dataset):
     def from_dict(self, d):
         self.__dict__.update(d)
         return self
-    
+
     def show(self, name='all'):
         from termcolor import colored
         if name == 'all':
@@ -3048,7 +3120,7 @@ class PredictorSet(Dataset):
         for pred, how in deseason_dict.items():
             if pred in self.data_vars:
                 self[pred] = deseason_xr(self[pred], how=how,
-                                         verbose=self.verbose)    
+                                         verbose=self.verbose)
         return self
 
     def select_season(self, season):
@@ -3175,7 +3247,7 @@ class PredictorSet(Dataset):
         if self.season is not None:
             self = self.select_season(self.season)
         # finally, select the times:
-        self = self.select_times(self.time_period)            
+        self = self.select_times(self.time_period)
         # 8) to_array - stacking
         if stack:
             X = self.select(self.regressors, base_preds=False, stack=True)
