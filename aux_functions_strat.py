@@ -6,6 +6,53 @@ Created on Mon Oct 22 10:33:05 2018
 @author: shlomi
 """
 
+def anomalize_xr(da_ts, freq='MS', time_dim=None, verbose=True):  # i.e., like deseason
+    import xarray as xr
+    if time_dim is None:
+        time_dim = list(set(da_ts.dims))[0]
+    attrs = da_ts.attrs
+    if isinstance(da_ts, xr.Dataset):
+        da_attrs = dict(zip([x for x in da_ts],[da_ts[x].attrs for x in da_ts]))
+    try:
+        name = da_ts.name
+    except AttributeError:
+        name = ''
+    if isinstance(da_ts, xr.Dataset):
+        name = [x for x in da_ts]
+    # if freq == 'D':
+    #     if verbose:
+    #         print('removing daily means from {}'.format(name))
+    #     frq = 'daily'
+    #     date = groupby_date_xr(da_ts)
+    #     da_anoms = da_ts.groupby(date) - da_ts.groupby(date).mean()
+    elif freq == 'H':
+        if verbose:
+            print('removing hourly means from {}'.format(name))
+        frq = 'hourly'
+        da_anoms = da_ts.groupby('{}.hour'.format(
+            time_dim)) - da_ts.groupby('{}.hour'.format(time_dim)).mean()
+    elif freq == 'MS':
+        if verbose:
+            print('removing monthly means from {}'.format(name))
+        frq = 'monthly'
+        da_anoms = da_ts.groupby('{}.month'.format(
+            time_dim)) - da_ts.groupby('{}.month'.format(time_dim)).mean()
+    elif freq == 'AS':
+        if verbose:
+            print('removing yearly means from {}'.format(name))
+        frq = 'yearly'
+        da_anoms = da_ts.groupby('{}.year'.format(
+            time_dim)) - da_ts.groupby('{}.year'.format(time_dim)).mean()
+    da_anoms = da_anoms.reset_coords(drop=True)
+    da_anoms.attrs.update(attrs)
+    da_anoms.attrs.update(action='removed {} means'.format(frq))
+    # if dataset, update attrs for each dataarray and add action='removed x means'
+    if isinstance(da_ts, xr.Dataset):
+        for x in da_ts:
+            da_anoms[x].attrs.update(da_attrs.get(x))
+            da_anoms[x].attrs.update(action='removed {} means'.format(frq))
+    return da_anoms
+
 
 def copy_coords_attrs(ds1, ds2, verbose=False):
     inter_coords = list(set(ds1.coords).intersection(set(ds2.coords)))
@@ -239,7 +286,7 @@ def grid_seperation_xr(lat_res=1.25, lon_res=1.25, area_equal=False,
                        clip_last_lon=True, lon_start=-180.0):
     import numpy as np
     import xarray as xr
-    # calculates the real area of earth's(normalized to 1) at each latt+lon strip 
+    # calculates the real area of earth's(normalized to 1) at each latt+lon strip
 
     def calculate_area(lat_outer, lon_outer):
         area = np.zeros((len(lat_outer) - 1, len(lon_outer) - 1))
