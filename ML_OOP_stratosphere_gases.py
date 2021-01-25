@@ -757,7 +757,7 @@ def correlate_regressor_with_swoosh(path=work_chaim, regressor='qbo_cdas',
                         right=0.885,
                         hspace=0.2,
                         wspace=0.2)
-    fig.suptitle('Correlation between SWOOSH and QBO_CDAS (1994-2019)')
+    fig.suptitle('Correlation between SWOOSH and QBO_Singapore original (1994-2019)')
     # df = sw.to_dataset('level').to_dataframe()
     # df[regressor] = reg.to_dataframe()
     # for i in np.arange(1, lags + 1):
@@ -2865,7 +2865,7 @@ class TargetArray(Dataset):
                 print(colored(value, color='white', attrs=['bold']))
         elif hasattr(self, name):
             print(colored('{} : '.format(name), color='blue', attrs=['bold']), end='')
-            print(colored(self.name, color='white', attrs=['bold']))
+            print(colored(self.name, colpre_proceor='white', attrs=['bold']))
 
     def select_season(self, season):
         to_update = self.__dict__
@@ -3114,7 +3114,8 @@ class PredictorSet(Dataset):
         # update this dict to include predictors to be deseasoned and how:
         deseason_dict = {'radio_cold': 'mean', 'radio_cold_no_qbo': 'mean',
                          'era5_bdc': 'mean', 'era5_bdc70': 'mean',
-                         'era5_bdc82': 'mean'}
+                         'era5_bdc82': 'mean', 'qbo_cdas_original': 'mean',
+                         'co2': 'std', 'qbo_sing': 'mean'}
         if self.deseason_dict is not None:
             deseason_dict.update(self.deseason_dict)
         for pred, how in deseason_dict.items():
@@ -3238,7 +3239,7 @@ class PredictorSet(Dataset):
         # 4) deseason
         self = self.deseason()
         # 5) normalize
-        self = self.normalize()
+        # self = self.normalize()
         # 6) optional : reg_shift
         if self.reg_time_shift is not None:
             self = self.reg_shift(self.reg_time_shift)
