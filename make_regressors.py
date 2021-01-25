@@ -487,6 +487,8 @@ def _produce_T500_from_era5(loadpath, savepath=None):
     return t500
 
 
+# def _produce_qbo_berlin()
+
 def _produce_eof_pcs(loadpath, npcs=2, name='qbo', source='singapore',
                      levels=(100, 10), plot=True, savepath=None):
     import xarray as xr
@@ -875,7 +877,7 @@ def _download_enso_ersst(loadpath, filename='noaa_ersst_nino.nc', index=False,
 #    return solar_xr
 
 
-def _download_singapore_qbo(path=None, filename='singapore_qbo.nc'):
+def _download_singapore_qbo(path=None, filename='singapore_qbo_index.nc'):
     import requests
     import os.path
     import io
@@ -892,7 +894,7 @@ def _download_singapore_qbo(path=None, filename='singapore_qbo.nc'):
     if filepath.is_file():
         print('singapore QBO already d/l and saved!')
         # read it to data array (xarray)
-        sqbo_xr = xr.open_dataarray(path / filename)
+        sqbo_xr = xr.open_dataset(path / filename)
         # else d/l the file and first read it to df (pandas),
         # then to xarray then save as nc:
     else:
