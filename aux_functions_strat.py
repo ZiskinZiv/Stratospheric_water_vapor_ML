@@ -456,6 +456,13 @@ def predict_xr(result_ds, regressors):
     return result_ds
 
 
+def groupby_date_xr(da_ts, time_dim='time'):
+    df = da_ts[time_dim].to_dataframe()
+    df['date'] = df.index.date
+    date = df['date'].to_xarray()
+    return date
+
+
 def custom_stack_xr(da, dim_not_stacked='time'):
     import xarray as xr
     import pandas as pd
