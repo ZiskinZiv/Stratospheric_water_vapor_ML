@@ -6,43 +6,65 @@ Created on Mon Oct 22 10:33:05 2018
 @author: shlomi
 """
 
-def anomalize_xr(da_ts, freq='MS', time_dim=None, verbose=True):  # i.e., like deseason
+def anomalize_xr(da_ts, freq='D', time_dim=None, units=None, verbose=True):  # i.e., like deseason
     import xarray as xr
     if time_dim is None:
         time_dim = list(set(da_ts.dims))[0]
     attrs = da_ts.attrs
     if isinstance(da_ts, xr.Dataset):
-        da_attrs = dict(zip([x for x in da_ts],[da_ts[x].attrs for x in da_ts]))
+        da_attrs = dict(zip([x for x in da_ts], [da_ts[x].attrs for x in da_ts]))
     try:
         name = da_ts.name
     except AttributeError:
         name = ''
     if isinstance(da_ts, xr.Dataset):
         name = [x for x in da_ts]
-    # if freq == 'D':
-    #     if verbose:
-    #         print('removing daily means from {}'.format(name))
-    #     frq = 'daily'
-    #     date = groupby_date_xr(da_ts)
-    #     da_anoms = da_ts.groupby(date) - da_ts.groupby(date).mean()
+    if freq == 'D':
+        if verbose:
+            print('removing daily means from {}'.format(name))
+        frq = 'daily'
+        date = groupby_date_xr(da_ts)
+        grp = date
     elif freq == 'H':
         if verbose:
             print('removing hourly means from {}'.format(name))
         frq = 'hourly'
-        da_anoms = da_ts.groupby('{}.hour'.format(
-            time_dim)) - da_ts.groupby('{}.hour'.format(time_dim)).mean()
+        grp = '{}.hour'.format(time_dim)
     elif freq == 'MS':
         if verbose:
             print('removing monthly means from {}'.format(name))
         frq = 'monthly'
-        da_anoms = da_ts.groupby('{}.month'.format(
-            time_dim)) - da_ts.groupby('{}.month'.format(time_dim)).mean()
+        grp = '{}.month'.format(time_dim)
     elif freq == 'AS':
         if verbose:
             print('removing yearly means from {}'.format(name))
         frq = 'yearly'
-        da_anoms = da_ts.groupby('{}.year'.format(
-            time_dim)) - da_ts.groupby('{}.year'.format(time_dim)).mean()
+        grp = '{}.year'.format(time_dim)
+    elif freq == 'DOY':
+        if verbose:
+            print('removing day of year means from {}'.format(name))
+        frq = 'dayofyear'
+        grp = '{}.dayofyear'.format(time_dim)
+    elif freq == 'WOY':
+        if verbose:
+            print('removing week of year means from {}'.format(name))
+        frq = 'weekofyear'
+        grp = '{}.weekofyear'.format(time_dim)
+    # calculate climatology:
+    climatology = da_ts.groupby(grp).mean()
+    climatology_std = da_ts.groupby(grp).std()
+    da_anoms = da_ts.groupby(grp) - climatology
+    if units == '%':
+        da_anoms = 100.0 * (da_anoms.groupby(grp) / climatology)
+        # da_anoms = 100.0 * (da_anoms / da_ts.mean())
+        # da_anoms = 100.0 * (da_ts.groupby(grp)/climatology - 1)
+        # da_anoms = 100.0 * (da_ts.groupby(grp)-climatology) / da_ts
+        if verbose:
+            print('Using % as units.')
+    elif units == 'std':
+        da_anoms = (da_anoms.groupby(grp) / climatology_std)
+        if verbose:
+            print('Using std as units.')
     da_anoms = da_anoms.reset_coords(drop=True)
     da_anoms.attrs.update(attrs)
     da_anoms.attrs.update(action='removed {} means'.format(frq))
@@ -51,6 +73,8 @@ def anomalize_xr(da_ts, freq='MS', time_dim=None, verbose=True):  # i.e., like d
         for x in da_ts:
             da_anoms[x].attrs.update(da_attrs.get(x))
             da_anoms[x].attrs.update(action='removed {} means'.format(frq))
+            if units == '%':
+                da_anoms[x].attrs.update(units='%')
     return da_anoms
 
 
