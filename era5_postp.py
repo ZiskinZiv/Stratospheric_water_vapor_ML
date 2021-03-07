@@ -27,21 +27,21 @@ def concat_era5T(ds):
 def proc_era5(path, field, model_name):
     import xarray as xr
     import numpy as np
+    from aux_functions_strat import path_glob
+    from aux_functions_strat import save_ncfile
+    files = sorted(path_glob(path, 'era5_{}_*.nc'.format(field)))
     if 'single' in model_name:
-        era5 = xr.open_mfdataset(path + 'era5_' + field + '_*.nc')
+        era5 = xr.open_mfdataset(files)
         era5 = concat_era5T(era5)
         start = era5.time.dt.year[0].values.item()
         end = era5.time.dt.year[-1].values.item()
         filename = '_'.join(['era5', str(field), '4Xdaily', str(start) +
                              '-' + str(end)])
         filename += '.nc'
-        print('saving ' + filename + ' to ' + path)
-        # comp = dict(zlib=True, complevel=9)  # best compression
-        # encoding = {var: comp for var in era5.data_vars}
-        era5.to_netcdf(path + filename, 'w') # , encoding=encoding)
+        save_ncfile(era5, path, filename)
         print('Done!')
     elif 'pressure' in model_name:
-        era5 = xr.open_mfdataset(path + 'era5_' + field + '_*.nc')
+        era5 = xr.open_mfdataset(files)
         era5 = concat_era5T(era5)
         start = era5.time.dt.year[0].values.item()
         end = era5.time.dt.year[-1].values.item()
@@ -50,20 +50,18 @@ def proc_era5(path, field, model_name):
             era5_yearly = era5.sel(time=str(year))
             filename = '_'.join(['era5', str(field), '4Xdaily', str(year)])
             filename += '.nc'
-            print('saving ' + filename + ' to ' + path)
-            # comp = dict(zlib=True, complevel=9)  # best compression
-            # encoding = {var: comp for var in era5.data_vars}
-            era5_yearly.to_netcdf(path + filename, 'w') # , encoding=encoding)
+            save_ncfile(era5_yearly, path, filename)
         print('Done!')
     return
 
 
 def check_path(path):
     import os
+    from pathlib import Path
     path = str(path)
     if not os.path.exists(path):
         raise argparse.ArgumentTypeError(path + ' does not exist...')
-    return path
+    return Path(path)
 
 
 if __name__ == '__main__':
@@ -101,5 +99,5 @@ if __name__ == '__main__':
         sys.exit()
     cds_obj = era5_var.get_model_name(args.field)
     print('post-proccessing era5 all years, field: ' + args.field +
-          ', saving to path:' + args.path)
+          ', saving to path:' + args.path.as_posix())
     proc_era5(args.path, args.field, era5_var.model_name)
