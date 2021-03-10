@@ -28,8 +28,10 @@ def proc_era5(path, field, model_name):
     import xarray as xr
     import numpy as np
     from aux_functions_strat import path_glob
-    from aux_functions_strat import save_ncfile
+    # from aux_functions_strat import save_ncfile
     files = sorted(path_glob(path, 'era5_{}_*.nc'.format(field)))
+    files = [x for x in files if 'mm' not in x.as_posix()]
+    print(files)
     if 'single' in model_name:
         era5 = xr.open_mfdataset(files)
         era5 = concat_era5T(era5)
@@ -38,7 +40,7 @@ def proc_era5(path, field, model_name):
         filename = '_'.join(['era5', str(field), '4Xdaily', str(start) +
                              '-' + str(end)])
         filename += '.nc'
-        save_ncfile(era5, path, filename)
+        era5.to_netcdf(path / filename)
         print('Done!')
     elif 'pressure' in model_name:
         era5 = xr.open_mfdataset(files)
@@ -50,7 +52,7 @@ def proc_era5(path, field, model_name):
             era5_yearly = era5.sel(time=str(year))
             filename = '_'.join(['era5', str(field), '4Xdaily', str(year)])
             filename += '.nc'
-            save_ncfile(era5_yearly, path, filename)
+            era5_yearly.to_netcdf(path / filename)
         print('Done!')
     return
 
@@ -80,7 +82,7 @@ if __name__ == '__main__':
     required.add_argument('--field', help="era5 field abbreviation, e.g., T,\
                           U , V", type=str, choices=era5_var.list_vars(),
                           metavar='Era5 Field name abbreviation')
-#    optional.add_argument('--type', help='Use single for single level products,' + 
+#    optional.add_argument('--type', help='Use single for single level products,' +
 #                          ' pressure for pressure level products.'
 #                          , type=str, choices=['single', 'pressure'])
 #                          metavar=str(cds.start_year) + ' to ' + str(cds.end_year))
