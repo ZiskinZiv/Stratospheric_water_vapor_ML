@@ -6,7 +6,7 @@ Created on Mon Apr 12 08:54:32 2021
 @author: shlomi
 """
 from strat_paths import work_chaim
-
+ml_path = work_chaim / 'ML'
 
 def produce_X(regressors=['qbo_cdas', 'anom_nino3p4']):
     from make_regressors import load_all_regressors
@@ -71,7 +71,7 @@ def single_cross_validation(X_val, y_val, model_name='SVM',
     if 'r2_adj' in scorers:
         scores_dict['r2_adj'] = make_scorer(r2_adj_score)
 
-    X = X_val.sel(time=y_val['time'])
+    X = X_val.dropna('time').sel(time=y_val['time'])
     y = y_val
 
     # if param_grid == 'light':
@@ -115,6 +115,72 @@ def save_gridsearchcv_object(GridSearchCV, savepath, filename):
     print('{} was saved to {}'.format(filename, savepath))
     joblib.dump(GridSearchCV, savepath / filename)
     return
+
+
+def load_one_gridsearchcv_object(path=ml_path, model_name='SVM', verbose=True):
+    """load one gridsearchcv obj with model_name and features and run read_one_gridsearchcv_object"""
+    from aux_functions_strat import path_glob
+    import joblib
+    # first filter for model name:
+    if verbose:
+        print('loading GridsearchCVs results for {} model'.format(model_name))
+    model_files = path_glob(path, 'GRSRCHCV_*.pkl')
+    model_files = [x for x in model_files if model_name in x.as_posix()]
+    # now select features:
+    # if verbose:
+    #     print('loading GridsearchCVs results with {} features'.format(features))
+    # model_features = [x.as_posix().split('/')[-1].split('_')[3] for x in model_files]
+    # feat_ind = get_feature_set_from_list(model_features, features)
+    # also get the test ratio and seed number:
+    # if len(feat_ind) > 1:
+    #     if verbose:
+    #         print('found {} GR objects.'.format(len(feat_ind)))
+    #     files = sorted([model_files[x] for x in feat_ind])
+    #     outer_splits = [x.as_posix().split('/')[-1].split('.')[0].split('_')[-3] for x in files]
+    #     grs = [joblib.load(x) for x in files]
+    #     best_dfs = [read_one_gridsearchcv_object(x) for x in grs]
+    #     di = dict(zip(outer_splits, best_dfs))
+    #     return di
+    # else:
+        # file = model_files[feat_ind]
+        # seed = file.as_posix().split('/')[-1].split('.')[0].split('_')[-1]
+        # outer_splits = file.as_posix().split('/')[-1].split('.')[0].split('_')[-3]
+    # load and produce best_df:
+    gr = joblib.load(model_files[0])
+    best_df = read_one_gridsearchcv_object(gr)
+    return best_df
+
+
+def read_one_gridsearchcv_object(gr):
+    """read one gridsearchcv multimetric object and
+    get the best params, best mean/std scores"""
+    import pandas as pd
+    # first get all the scorers used:
+    scorers = [x for x in gr.scorer_.keys()]
+    # now loop over the scorers:
+    best_params = []
+    best_mean_scores = []
+    best_std_scores = []
+    for scorer in scorers:
+        df_mean = pd.concat([pd.DataFrame(gr.cv_results_["params"]), pd.DataFrame(
+            gr.cv_results_["mean_test_{}".format(scorer)], columns=[scorer])], axis=1)
+        df_std = pd.concat([pd.DataFrame(gr.cv_results_["params"]), pd.DataFrame(
+            gr.cv_results_["std_test_{}".format(scorer)], columns=[scorer])], axis=1)
+        # best index = highest score:
+        best_ind = df_mean[scorer].idxmax()
+        best_mean_scores.append(df_mean.iloc[best_ind][scorer])
+        best_std_scores.append(df_std.iloc[best_ind][scorer])
+        best_params.append(df_mean.iloc[best_ind].to_frame().T.iloc[:, :-1])
+    best_df = pd.concat(best_params)
+    best_df['mean_score'] = best_mean_scores
+    best_df['std_score'] = best_std_scores
+    best_df.index = scorers
+    return best_df
+
+
+def order_of_mag(minimal=-5, maximal=1):
+    import numpy as np
+    return [10**float(x) for x in np.arange(minimal, maximal + 1)]
 
 
 class ML_Classifier_Switcher(object):
@@ -201,8 +267,7 @@ class ML_Classifier_Switcher(object):
                                'min_samples_split': [2, 5, 15, 30, 50, 70, 100],
                                'n_estimators': [100, 200, 300, 500, 700, 1000, 1300, 1500]
                                }
-        return RandomForestRegressor(random_state=42, n_jobs=-1,
-                                     class_weight=None)
+        return RandomForestRegressor(random_state=42, n_jobs=-1)
 
     def LR(self):
         from sklearn.linear_model import LinearRegression
