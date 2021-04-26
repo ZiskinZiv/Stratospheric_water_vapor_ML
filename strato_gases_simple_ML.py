@@ -59,7 +59,8 @@ def single_cross_validation(X_val, y_val, model_name='SVM',
                             seed=42, savepath=None, verbose=0,
                             param_grid='dense', n_jobs=-1):
     # from sklearn.model_selection import cross_validate
-    # from sklearn.model_selection import StratifiedKFold
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.model_selection import KFold
     from sklearn.model_selection import TimeSeriesSplit
     from sklearn.model_selection import GridSearchCV
     # from sklearn.model_selection import train_test_split
@@ -78,8 +79,10 @@ def single_cross_validation(X_val, y_val, model_name='SVM',
     #     print(np.unique(X.feature.values))
 
     # configure the cross-validation procedure
-    cv = TimeSeriesSplit(n_splits=n_splits)
-    print('CV TimeSeriesKfolds of {}.'.format(n_splits))
+    # cv = TimeSeriesSplit(n_splits=n_splits)
+    cv = KFold(n_splits=n_splits, random_state=seed, shuffle=True)
+    # print('CV TimeSeriesKfolds of {}.'.format(n_splits))
+    print('CV KFold of {}.'.format(n_splits))
     # define the model and search space:
 
     ml = ML_Classifier_Switcher()
