@@ -55,7 +55,7 @@ def main_strato_gases_ML(args):
     else:
         seed = args.rseed
     if args.param_grid is None:
-        param_grid = 'normal'
+        param_grid = 'dense'
     else:
         param_grid = args.param_grid
     if args.verbose is None:
