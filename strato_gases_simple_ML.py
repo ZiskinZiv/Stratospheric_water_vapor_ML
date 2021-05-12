@@ -18,7 +18,7 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4']):
 
 
 def produce_y(path=work_chaim, detrend='lowess',
-              sw_var='combinedanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
+              sw_var='combinedeqfillanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
               lat_mean=[-30, 30], plevel=82, deseason='std'):
     import xarray as xr
     from aux_functions_strat import lat_mean
