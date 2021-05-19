@@ -8,10 +8,15 @@ Created on Mon Apr 12 08:54:32 2021
 from strat_paths import work_chaim
 ml_path = work_chaim / 'ML'
 
-def produce_X(regressors=['qbo_cdas', 'anom_nino3p4']):
+def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
+              lag={'qbo_cdas': 5}):
     from make_regressors import load_all_regressors
     ds = load_all_regressors()
-    ds = ds[regressors]
+    ds = ds[regressors].dropna('time')
+    if lag is not None:
+        for key, value in lag.items():
+            print(key, value)
+            ds[key] = ds[key].shift(time=value)
     X = ds.dropna('time').to_array('regressor')
     X = X.transpose('time', 'regressor')
     return X
