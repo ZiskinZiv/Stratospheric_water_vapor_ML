@@ -70,11 +70,13 @@ def main_strato_gases_ML(args):
         regressors = args.regressors
     else:
         regressors = ['qbo_cdas', 'anom_nino3p4']
-    X = produce_X(regressors=regressors)
-    y = produce_y(path=work_chaim, detrend=None,
-                  sw_var='combinedanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
+    X = produce_X(regressors=regressors, lag={'qbo_cdas': 5})
+    y = produce_y(path=work_chaim, detrend='lowess',
+                  sw_var='combinedeqfillanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
                   lat_mean=[-30, 30], plevel=82, deseason='std')
     # scorers = ['roc_auc', 'f1', 'recall', 'precision']
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
     if args.scorers is None:
         scorers = ['r2', 'r2_adj', 'neg_mean_squared_error',
                    'explained_variance']
