@@ -363,7 +363,7 @@ def _produce_CDAS_QBO(savepath=None):
     stan = df.iloc[stan_index + 2:-1, :]
     dfs = []
     for df in [orig, anom, stan]:
-        df = df.head(41)  # keep all df 1979-2019
+        df = df.head(42)  # keep all df 1979-2020
         # df.drop(df.tail(1).index, inplace=True)
         df = df.melt(id_vars='YEAR', var_name='MONTH')
         datetime = pd.to_datetime((df.YEAR + '-' + df.MONTH).apply(str), format='%Y-%b')
