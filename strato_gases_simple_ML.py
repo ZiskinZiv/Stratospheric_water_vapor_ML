@@ -2,7 +2,18 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Apr 12 08:54:32 2021
-
+OK so far:
+    swoosh h2o: 1994-2019 30S to 30N mean, 82 hpa
+    regressors:
+    QBO_CDAS = +5 months lag correlated with h2o: 0.508
+    Anom_nino3p4 = no lags corr with h2o: -0.167
+    LR:
+    no CV does R2 of 0.2857
+    Cross validate 5 kfolds: mean R2: 0.1786 std R2: 0.245
+    SVM:
+    CV 5 kfolds: mean R2: 0.418, mean adj_R2: 0.408,
+    std R2: 0.047, std adj_R2: 0.0485
+    need to plot residuals with best model.
 @author: shlomi
 """
 from strat_paths import work_chaim
