@@ -236,11 +236,16 @@ class ML_Classifier_Switcher(object):
         #                        'degree': [1, 2, 3, 4, 5],
         #                        'coef0': [0, 1, 2, 3, 4]}
         elif self.pgrid == 'dense':
-            self.param_grid = {'kernel': ['rbf', 'sigmoid', 'linear', 'poly'],
+            # self.param_grid = {'kernel': ['rbf', 'sigmoid', 'linear', 'poly'],
+            #                    'C': np.logspace(-2, 2, 10), # order_of_mag(-2, 2),
+            #                    'gamma': np.logspace(-5, 1, 14), # order_of_mag(-5, 0),
+            #                    'degree': [1, 2, 3, 4, 5],
+            #                    'coef0': [0, 1, 2, 3, 4]}
+            self.param_grid = {'kernel': ['rbf', 'sigmoid', 'linear'],
                                'C': np.logspace(-2, 2, 10), # order_of_mag(-2, 2),
-                               'gamma': np.logspace(-5, 1, 14), # order_of_mag(-5, 0),
-                               'degree': [1, 2, 3, 4, 5],
-                               'coef0': [0, 1, 2, 3, 4]}
+                                'gamma': np.logspace(-5, 1, 14)}#, # order_of_mag(-5, 0),
+                               # 'degree': [1, 2, 3, 4, 5],
+                               # 'coef0': [0, 1, 2, 3, 4]}
         return SVR()
 
     def MLP(self):
