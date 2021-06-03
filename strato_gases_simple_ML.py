@@ -19,6 +19,100 @@ OK so far:
 from strat_paths import work_chaim
 ml_path = work_chaim / 'ML'
 
+
+def plot_repeated_kfold_dist(df, model_dict, X, y):
+    import seaborn as sns
+    sns.set_theme(style='ticks', font_scale=1.5)
+    in_sample_r2 = {}
+    for model_name, model in model_dict.items():
+        model.fit(X, y)
+        in_sample_r2[model_name] = model.score(X, y)
+    print(in_sample_r2)
+    df_melted = df.T.melt(var_name='model', value_name=r'R$^2$')
+    fg = sns.displot(data=df_melted, x=r'R$^2$', col="model",
+                     kind="hist", col_wrap=2, hue='model', stat='density',
+                     kde=True)
+    for ax in fg.axes:
+        label = ax.title.get_text()
+        model = label.split('=')[-1].strip()
+        mean = df.T.mean().loc[model]
+        std = df.T.std().loc[model]
+        median = df.T.median().loc[model]
+        in_sample = in_sample_r2[model]
+        textstr = '\n'.join((
+            r'$\mathrm{mean}=%.2f$' % (mean, ),
+            r'$\mathrm{median}=%.2f$' % (median, ),
+            r'$\mathrm{std}=%.2f$' % (std, ),
+            r'in sample result$=%.2f$' % (in_sample, )))
+        props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+        ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=14,
+                verticalalignment='top', bbox=props)
+    fg.fig.suptitle('Out of sample testing models comparison')
+    fg.fig.subplots_adjust(top=0.916)
+    return fg
+
+
+def assemble_cvr_dataframe(path=ml_path, score='test_r2', n_splits=5):
+    import pandas as pd
+    lr, lr_model = cross_validate_using_optimized_HP(
+        path, model='LR', n_splits=n_splits)
+    svm, svm_model = cross_validate_using_optimized_HP(
+        path, model='SVM', n_splits=n_splits)
+    rf, rf_model = cross_validate_using_optimized_HP(
+        path, model='RF', n_splits=n_splits)
+    mlp, mlp_model = cross_validate_using_optimized_HP(
+        path, model='MLP', n_splits=n_splits)
+    df = pd.DataFrame([lr[score], svm[score], rf[score], mlp[score]])
+    df.index = ['MLR', 'SVM', 'RF', 'MLP']
+    len_cols = len(df.columns)
+    df.columns = ['kfold_{}'.format(x+1) for x in range(len_cols)]
+    model_dict = {'MLR': lr_model, 'RF': rf_model,
+                  'SVM': svm_model, 'MLP': mlp_model}
+    return df, model_dict
+
+
+def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
+                                      n_repeats=20,
+                                      scorers=['r2', 'r2_adj',
+                                               'neg_mean_squared_error',
+                                               'explained_variance']):
+    from sklearn.model_selection import cross_validate
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.model_selection import KFold
+    from sklearn.model_selection import RepeatedKFold
+    from sklearn.metrics import make_scorer
+    scores_dict = {s: s for s in scorers}
+    if 'r2_adj' in scorers:
+        scores_dict['r2_adj'] = make_scorer(r2_adj_score)
+    if model != 'LR':
+        hp_params = get_HP_params_from_optimized_model(path, model)
+    ml = ML_Classifier_Switcher()
+    ml_model = ml.pick_model(model_name=model)
+    if model != 'LR':
+        ml_model.set_params(**hp_params)
+    print(ml_model)
+    X = produce_X()
+    y = produce_y()
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
+    # cv = TimeSeriesSplit(5)
+    # cv = KFold(10, shuffle=True, random_state=1)
+    cv = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats,
+                       random_state=1)
+    cvr = cross_validate(ml_model, X, y, scoring=scores_dict, cv=cv)
+    return cvr, ml_model
+
+
+def get_HP_params_from_optimized_model(path=ml_path, model='SVM'):
+    import joblib
+    from aux_functions_strat import path_glob
+    files = path_glob(path, 'GRSRCHCV_*.pkl')
+    file = [x for x in files if model in x.as_posix()][0]
+    gr = joblib.load(file)
+    df = read_one_gridsearchcv_object(gr)
+    return df.iloc[0][:-2].to_dict()
+
+
 def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
               lag={'qbo_cdas': 5}):
     from make_regressors import load_all_regressors
