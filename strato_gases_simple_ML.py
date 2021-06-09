@@ -20,6 +20,113 @@ from strat_paths import work_chaim
 ml_path = work_chaim / 'ML'
 
 
+# def CV_splitter_for_xarray_time_series(X_da, time_dim='time', grp='year'):
+#     groups = X_da.groupby('{}.{}'.format(time_dim, grp)).groups
+#     sorted_groups = [value for (key, value) in sorted(groups.items())]
+#     cv = [(sorted_groups[i] + sorted_groups[i+1], sorted_groups[i+2])
+#           for i in range(len(sorted_groups)-2)]
+#     return cv
+
+def plot_model_predictions(da):
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    from aux_functions_strat import convert_da_to_long_form_df
+    sns.set_theme(style='ticks', font_scale=1.5)
+    df = convert_da_to_long_form_df(da)
+    fig, ax = plt.subplots(figsize=(14, 5))
+    ax = sns.lineplot(data=df, x='time', y='value', hue='model/obs.', legend=True)
+    ax.grid(True)
+    ax.set_xlabel('')
+    ax.set_ylabel('H2O anomalies [std]')
+    ax.legend(prop={'size': 10})
+    fig.tight_layout()
+    return fig
+
+
+def produce_LOO_yearly_predictions_for_all_HP_optimized_models(path=ml_path):
+    import xarray as xr
+    X = produce_X()
+    y = produce_y()
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
+    ml = ML_Classifier_Switcher()
+    das = []
+    for model_name in ['RF', 'SVM', 'MLP']:
+        print('preforming LOO with yearly group for {}.'.format(model_name))
+        model = ml.pick_model(model_name)
+        model.set_params(**get_HP_params_from_optimized_model(path=path, model=model_name))
+        da = LeaveOneOutGroup_cross_val_predict_year(model, X, y)
+        da.name = model_name + ' model'
+        das.append(da)
+    ds = xr.merge(das)
+    ds['SWOOSH'] = y
+    da = ds.to_array('model/obs.')
+    da.name = 'h2o'
+    return da
+
+
+def LeaveOneOutGroup_cross_val_predict_year(estimator, X, y):
+    from sklearn.model_selection import LeaveOneGroupOut
+    from sklearn.model_selection import cross_val_predict
+    logo = LeaveOneGroupOut()
+    groups = X['time'].dt.year
+    cvr = cross_val_predict(estimator, X, y, groups=groups, cv=logo)
+    da_ts = y.copy(data=cvr)
+    da_ts.attrs['estimator'] = estimator.__repr__().split('(')[0]
+    da_ts.name = da_ts.name + '_' + da_ts.attrs['estimator']
+    for key, value in estimator.get_params().items():
+        da_ts.attrs[key] = value
+    return da_ts
+
+
+def plot_feature_importances_RF(fi_da):
+    import seaborn as sns
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    def change_width(ax, new_value) :
+        for patch in ax.patches :
+            current_width = patch.get_width()
+            diff = current_width - new_value
+
+            # we change the bar width
+            patch.set_width(new_value)
+
+            # we recenter the bar
+            patch.set_x(patch.get_x() + diff * .5)
+
+    def show_values_on_bars(axs, fs=12, fw='bold', exclude_bar_num=None):
+        import numpy as np
+        def _show_on_single_plot(ax, exclude_bar_num=3):
+            for i, p in enumerate(ax.patches):
+                if i != exclude_bar_num and exclude_bar_num is not None:
+                    _x = p.get_x() + p.get_width() / 2
+                    _y = p.get_y() + p.get_height()
+                    value = '{:.1f}'.format(p.get_height())
+                    ax.text(_x, _y, value, ha="right",
+                            fontsize=fs, fontweight=fw, zorder=20)
+
+        if isinstance(axs, np.ndarray):
+            for idx, ax in np.ndenumerate(axs):
+                _show_on_single_plot(ax, exclude_bar_num)
+        else:
+            _show_on_single_plot(axs, exclude_bar_num)
+    sns.set_theme(style='ticks', font_scale=1.5)
+    fi_da['regressor'] = ['QBO', 'ENSO']
+    df = fi_da.to_dataframe('feature_importance') * 100.0
+    df = df.unstack().melt()
+    fig, ax = plt.subplots(figsize=(6, 8))
+    sns.barplot(data=df, x='regressor', y='value', orient='v', ci='sd',
+                ax=ax, hue='regressor', estimator=np.mean, dodge=False)
+    ax.set_xlabel('')
+    ax.set_ylabel('Feature Importance [%]')
+    show_values_on_bars(ax, fs=16, exclude_bar_num=1)
+    change_width(ax, 0.31)
+    ax.legend(loc='upper right')
+    fig.tight_layout()
+    return fig
+
+
 def plot_repeated_kfold_dist(df, model_dict, X, y):
     import seaborn as sns
     sns.set_theme(style='ticks', font_scale=1.5)
@@ -101,6 +208,39 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
                        random_state=1)
     cvr = cross_validate(ml_model, X, y, scoring=scores_dict, cv=cv)
     return cvr, ml_model
+
+
+def manual_cross_validation_for_RF_feature_importances(rf_model, n_splits=5, n_repeats=20, scorers=['r2', 'r2_adj',
+                                                                                                    'neg_mean_squared_error',
+                                                                                                    'explained_variance']):
+    from sklearn.model_selection import KFold
+    import xarray as xr
+    import numpy as np
+    from sklearn.model_selection import RepeatedKFold
+    from sklearn.metrics import make_scorer
+    scores_dict = {s: s for s in scorers}
+    if 'r2_adj' in scorers:
+        scores_dict['r2_adj'] = make_scorer(r2_adj_score)
+    print(rf_model)
+    X = produce_X()
+    y = produce_y()
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
+    # cv = TimeSeriesSplit(5)
+    # cv = KFold(10, shuffle=True, random_state=1)
+    cv = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats,
+                       random_state=1)
+    fis = []
+    for train_index, test_index in cv.split(X):
+        # print("TRAIN:", train_index, "TEST:", test_index)
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y[train_index], y[test_index]
+        rf_model.fit(X_train, y_train)
+        fis.append(rf_model.feature_importances_)
+    fi = xr.DataArray(fis, dims=['repeats', 'regressor'])
+    fi['repeats'] = np.arange(1, len(fis)+1)
+    fi['regressor'] = X['regressor']
+    return fi
 
 
 def get_HP_params_from_optimized_model(path=ml_path, model='SVM'):
