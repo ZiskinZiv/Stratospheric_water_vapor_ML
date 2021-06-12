@@ -34,7 +34,10 @@ def plot_model_predictions(da):
     sns.set_theme(style='ticks', font_scale=1.5)
     df = convert_da_to_long_form_df(da)
     fig, ax = plt.subplots(figsize=(14, 5))
-    ax = sns.lineplot(data=df, x='time', y='value', hue='model/obs.', legend=True)
+    ax = sns.lineplot(data=df, x='time', y='value', hue='model/obs.',
+                      legend=True)
+    lw = ax.lines[4].get_linewidth() # lw of first line
+    plt.setp(ax.lines[4], linewidth=2.5)
     ax.grid(True)
     ax.set_xlabel('')
     ax.set_ylabel('H2O anomalies [std]')
@@ -51,10 +54,11 @@ def produce_LOO_yearly_predictions_for_all_HP_optimized_models(path=ml_path):
     y = y.sel(time=slice('1994', '2019'))
     ml = ML_Classifier_Switcher()
     das = []
-    for model_name in ['RF', 'SVM', 'MLP']:
+    for model_name in ['RF', 'SVM', 'MLP', 'MLR']:
         print('preforming LOO with yearly group for {}.'.format(model_name))
         model = ml.pick_model(model_name)
-        model.set_params(**get_HP_params_from_optimized_model(path=path, model=model_name))
+        if model_name != 'MLR':
+            model.set_params(**get_HP_params_from_optimized_model(path=path, model=model_name))
         da = LeaveOneOutGroup_cross_val_predict_year(model, X, y)
         da.name = model_name + ' model'
         das.append(da)
@@ -527,6 +531,6 @@ class ML_Classifier_Switcher(object):
                                }
         return RandomForestRegressor(random_state=42, n_jobs=-1)
 
-    def LR(self):
+    def MLR(self):
         from sklearn.linear_model import LinearRegression
         return LinearRegression(n_jobs=-1)
