@@ -46,7 +46,8 @@ def plot_model_predictions(da):
     return fig
 
 
-def produce_LOO_yearly_predictions_for_all_HP_optimized_models(path=ml_path):
+def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
+                                                       cv='kfold'):
     import xarray as xr
     X = produce_X()
     y = produce_y()
@@ -59,7 +60,7 @@ def produce_LOO_yearly_predictions_for_all_HP_optimized_models(path=ml_path):
         model = ml.pick_model(model_name)
         if model_name != 'MLR':
             model.set_params(**get_HP_params_from_optimized_model(path=path, model=model_name))
-        da = LeaveOneOutGroup_cross_val_predict_year(model, X, y)
+        da = cross_val_predict_da(model, X, y, cv=cv)
         da.name = model_name + ' model'
         das.append(da)
     ds = xr.merge(das)
@@ -69,12 +70,17 @@ def produce_LOO_yearly_predictions_for_all_HP_optimized_models(path=ml_path):
     return da
 
 
-def LeaveOneOutGroup_cross_val_predict_year(estimator, X, y):
+def cross_val_predict_da(estimator, X, y, cv='kfold'):
     from sklearn.model_selection import LeaveOneGroupOut
+    from sklearn.model_selection import KFold
     from sklearn.model_selection import cross_val_predict
-    logo = LeaveOneGroupOut()
-    groups = X['time'].dt.year
-    cvr = cross_val_predict(estimator, X, y, groups=groups, cv=logo)
+    if cv == 'logo':
+        logo = LeaveOneGroupOut()
+        groups = X['time'].dt.year
+        cvr = cross_val_predict(estimator, X, y, groups=groups, cv=logo)
+    elif cv == 'kfold':
+        kfold = KFold(n_splits=5, shuffle=True, random_state=1)
+        cvr = cross_val_predict(estimator, X, y, cv=kfold)
     da_ts = y.copy(data=cvr)
     da_ts.attrs['estimator'] = estimator.__repr__().split('(')[0]
     da_ts.name = da_ts.name + '_' + da_ts.attrs['estimator']
@@ -163,16 +169,17 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
     return fg
 
 
-def assemble_cvr_dataframe(path=ml_path, score='test_r2', n_splits=5):
+def assemble_cvr_dataframe(path=ml_path, score='test_r2', n_splits=5,
+                           strategy='LOGO-year'):
     import pandas as pd
     lr, lr_model = cross_validate_using_optimized_HP(
-        path, model='LR', n_splits=n_splits)
+        path, model='MLR', n_splits=n_splits, strategy=strategy)
     svm, svm_model = cross_validate_using_optimized_HP(
-        path, model='SVM', n_splits=n_splits)
+        path, model='SVM', n_splits=n_splits, strategy=strategy)
     rf, rf_model = cross_validate_using_optimized_HP(
-        path, model='RF', n_splits=n_splits)
+        path, model='RF', n_splits=n_splits, strategy=strategy)
     mlp, mlp_model = cross_validate_using_optimized_HP(
-        path, model='MLP', n_splits=n_splits)
+        path, model='MLP', n_splits=n_splits, strategy=strategy)
     df = pd.DataFrame([lr[score], svm[score], rf[score], mlp[score]])
     df.index = ['MLR', 'SVM', 'RF', 'MLP']
     len_cols = len(df.columns)
@@ -183,7 +190,7 @@ def assemble_cvr_dataframe(path=ml_path, score='test_r2', n_splits=5):
 
 
 def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
-                                      n_repeats=20,
+                                      n_repeats=20, strategy='LOGO-year',
                                       scorers=['r2', 'r2_adj',
                                                'neg_mean_squared_error',
                                                'explained_variance']):
@@ -191,26 +198,40 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     from sklearn.model_selection import TimeSeriesSplit
     from sklearn.model_selection import KFold
     from sklearn.model_selection import RepeatedKFold
+    from sklearn.model_selection import LeaveOneGroupOut
+    from sklearn.model_selection import GroupShuffleSplit
+    logo = LeaveOneGroupOut()
+    gss = GroupShuffleSplit(n_splits=20, test_size=0.1, random_state=1)
     from sklearn.metrics import make_scorer
-    scores_dict = {s: s for s in scorers}
-    if 'r2_adj' in scorers:
-        scores_dict['r2_adj'] = make_scorer(r2_adj_score)
-    if model != 'LR':
-        hp_params = get_HP_params_from_optimized_model(path, model)
-    ml = ML_Classifier_Switcher()
-    ml_model = ml.pick_model(model_name=model)
-    if model != 'LR':
-        ml_model.set_params(**hp_params)
-    print(ml_model)
     X = produce_X()
     y = produce_y()
     X = X.sel(time=slice('1994', '2019'))
     y = y.sel(time=slice('1994', '2019'))
+    groups = X['time'].dt.year
+    scores_dict = {s: s for s in scorers}
+    if 'r2_adj' in scorers:
+        scores_dict['r2_adj'] = make_scorer(r2_adj_score)
+    if model != 'MLR':
+        hp_params = get_HP_params_from_optimized_model(path, model)
+    ml = ML_Classifier_Switcher()
+    ml_model = ml.pick_model(model_name=model)
+    if model != 'MLR':
+        ml_model.set_params(**hp_params)
+    print(ml_model)
     # cv = TimeSeriesSplit(5)
     # cv = KFold(10, shuffle=True, random_state=1)
     cv = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats,
                        random_state=1)
-    cvr = cross_validate(ml_model, X, y, scoring=scores_dict, cv=cv)
+    if strategy == 'LOGO-year':
+        print('using LeaveOneGroupOut strategy.')
+        cvr = cross_validate(ml_model, X, y, scoring=scores_dict, cv=logo,
+                             groups=groups)
+    elif strategy == 'GSS-year':
+        print('using GroupShuffleSplit strategy.')
+        cvr = cross_validate(ml_model, X, y, scoring=scores_dict, cv=gss,
+                             groups=groups)
+    else:
+        cvr = cross_validate(ml_model, X, y, scoring=scores_dict, cv=cv)
     return cvr, ml_model
 
 
