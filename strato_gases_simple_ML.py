@@ -164,8 +164,9 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
         ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=14,
                 verticalalignment='top', bbox=props)
-    fg.fig.suptitle('Out of sample testing models comparison')
-    fg.fig.subplots_adjust(top=0.916)
+    # fg.fig.suptitle('Out of sample testing models comparison')
+    # fg.fig.subplots_adjust(top=0.916)
+    # fg.fig.tight_layout()
     return fg
 
 
