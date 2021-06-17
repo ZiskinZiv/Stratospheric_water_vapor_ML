@@ -27,23 +27,52 @@ ml_path = work_chaim / 'ML'
 #           for i in range(len(sorted_groups)-2)]
 #     return cv
 
+def plot_forecast_busts_lines_datetime(ax, color='r', style='--'):
+    import pandas as pd
+    dts = ['2010-11', '2011-04', '2015-09', '2016-01', '2016-09', '2017-01']
+    dts = [pd.to_datetime(x) for x in dts]
+    [ax.axvline(x, c=color, ls=style) for x in dts]
+    # three forecast busts:
+    # 2010D2011JFM, 2015-OND, 2016-OND
+    # ax.axvline('2010-05', c=color, ls=style)
+    # ax.axvline('2010-09', c=color, ls=style)
+    return ax
+
+
 def plot_model_predictions(da):
     import seaborn as sns
     import matplotlib.pyplot as plt
     from aux_functions_strat import convert_da_to_long_form_df
+    from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
     sns.set_theme(style='ticks', font_scale=1.5)
     df = convert_da_to_long_form_df(da)
-    fig, ax = plt.subplots(figsize=(14, 5))
+    fig, ax = plt.subplots(figsize=(18, 5))
     ax = sns.lineplot(data=df, x='time', y='value', hue='model/obs.',
                       legend=True)
-    lw = ax.lines[4].get_linewidth() # lw of first line
+    lw = ax.lines[4].get_linewidth()  # lw of first line
     plt.setp(ax.lines[4], linewidth=2.5)
     ax.grid(True)
     ax.set_xlabel('')
     ax.set_ylabel('H2O anomalies [std]')
-    ax.legend(prop={'size': 10})
+    ax.xaxis.set_minor_locator(AutoMinorLocator())
+    ax.xaxis.grid(True, which='minor')
+    legend = ax.legend(prop={'size': 10})
+    plot_forecast_busts_lines_datetime(ax, color='k')
     fig.tight_layout()
+    # get handles and labels of legend:
+    hands, labes = ax.get_legend_handles_labels()
+    colors = [x.get_color() for x in hands]
+    # change the text labels to the colors of the lines:
+    for i, text in enumerate(legend.get_texts()):
+        text.set_color(colors[i])
     return fig
+
+
+def add_enso2_and_enso_qbo_to_X(X):
+    from ML_OOP_stratosphere_gases import poly_features
+    X = poly_features(X, feature_dim='regressor')
+    X = X.drop_sel(regressor='qbo_cdas^2')
+    return X
 
 
 def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
@@ -141,9 +170,14 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
     import seaborn as sns
     sns.set_theme(style='ticks', font_scale=1.5)
     in_sample_r2 = {}
+    X2 = add_enso2_and_enso_qbo_to_X(X)
     for model_name, model in model_dict.items():
-        model.fit(X, y)
-        in_sample_r2[model_name] = model.score(X, y)
+        if model_name == 'MLR2':
+            model.fit(X2, y)
+            in_sample_r2[model_name] = model.score(X2, y)
+        else:
+            model.fit(X, y)
+            in_sample_r2[model_name] = model.score(X, y)
     print(in_sample_r2)
     df_melted = df.T.melt(var_name='model', value_name=r'R$^2$')
     fg = sns.displot(data=df_melted, x=r'R$^2$', col="model",
@@ -171,22 +205,33 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
 
 
 def assemble_cvr_dataframe(path=ml_path, score='test_r2', n_splits=5,
-                           strategy='LOGO-year'):
+                           strategy='LOGO-year', add_MLR2=False):
     import pandas as pd
-    lr, lr_model = cross_validate_using_optimized_HP(
-        path, model='MLR', n_splits=n_splits, strategy=strategy)
-    svm, svm_model = cross_validate_using_optimized_HP(
-        path, model='SVM', n_splits=n_splits, strategy=strategy)
     rf, rf_model = cross_validate_using_optimized_HP(
         path, model='RF', n_splits=n_splits, strategy=strategy)
+    svm, svm_model = cross_validate_using_optimized_HP(
+        path, model='SVM', n_splits=n_splits, strategy=strategy)
     mlp, mlp_model = cross_validate_using_optimized_HP(
         path, model='MLP', n_splits=n_splits, strategy=strategy)
-    df = pd.DataFrame([lr[score], svm[score], rf[score], mlp[score]])
-    df.index = ['MLR', 'SVM', 'RF', 'MLP']
-    len_cols = len(df.columns)
-    df.columns = ['kfold_{}'.format(x+1) for x in range(len_cols)]
-    model_dict = {'MLR': lr_model, 'RF': rf_model,
-                  'SVM': svm_model, 'MLP': mlp_model}
+    lr, lr_model = cross_validate_using_optimized_HP(
+        path, model='MLR', n_splits=n_splits, strategy=strategy)
+    lr2, lr2_model = cross_validate_using_optimized_HP(
+        path, model='MLR', n_splits=n_splits, strategy=strategy,
+        add_MLR2=add_MLR2)
+    if add_MLR2:
+        df = pd.DataFrame([rf[score], svm[score], mlp[score], lr[score], lr2[score]])
+        df.index = ['RF', 'SVM', 'MLP', 'MLR', 'MLR2']
+        len_cols = len(df.columns)
+        df.columns = ['kfold_{}'.format(x+1) for x in range(len_cols)]
+        model_dict = {'RF': rf_model, 'SVM': svm_model,
+                      'MLP': mlp_model, 'MLR': lr_model, 'MLR2': lr2_model}
+    else:
+        df = pd.DataFrame([rf[score], svm[score], mlp[score], lr[score]])
+        df.index = ['RF', 'SVM', 'MLP', 'MLR']
+        len_cols = len(df.columns)
+        df.columns = ['kfold_{}'.format(x+1) for x in range(len_cols)]
+        model_dict = {'RF': rf_model, 'SVM': svm_model,
+                      'MLP': mlp_model, 'MLR': lr_model}
     return df, model_dict
 
 
@@ -194,7 +239,8 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
                                       n_repeats=20, strategy='LOGO-year',
                                       scorers=['r2', 'r2_adj',
                                                'neg_mean_squared_error',
-                                               'explained_variance']):
+                                               'explained_variance'],
+                                      add_MLR2=False):
     from sklearn.model_selection import cross_validate
     from sklearn.model_selection import TimeSeriesSplit
     from sklearn.model_selection import KFold
@@ -205,6 +251,9 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     gss = GroupShuffleSplit(n_splits=20, test_size=0.1, random_state=1)
     from sklearn.metrics import make_scorer
     X = produce_X()
+    if add_MLR2:
+        X = add_enso2_and_enso_qbo_to_X(X)
+        print('adding ENSO^2 and ENSO*QBO')
     y = produce_y()
     X = X.sel(time=slice('1994', '2019'))
     y = y.sel(time=slice('1994', '2019'))
@@ -212,11 +261,11 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     scores_dict = {s: s for s in scorers}
     if 'r2_adj' in scorers:
         scores_dict['r2_adj'] = make_scorer(r2_adj_score)
-    if model != 'MLR':
+    if 'MLR' not in model:
         hp_params = get_HP_params_from_optimized_model(path, model)
     ml = ML_Classifier_Switcher()
     ml_model = ml.pick_model(model_name=model)
-    if model != 'MLR':
+    if 'MLR' not in model:
         ml_model.set_params(**hp_params)
     print(ml_model)
     # cv = TimeSeriesSplit(5)
