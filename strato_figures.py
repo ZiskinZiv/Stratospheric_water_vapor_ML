@@ -186,6 +186,7 @@ def change_xticks_years(ax, start=1984, end=2018):
 def plot_predictor_corr_heatmap(save=True):
     import seaborn as sns
     import numpy as np
+    sns.set_theme(style='ticks', font_scale=1.5)
     df = plot_reg_correlation_heatmap(
         regs=[
             'qbo_cdas',
@@ -195,13 +196,18 @@ def plot_predictor_corr_heatmap(save=True):
             'era5_t500'],
         return_df=True)
     df.columns = ['QBO', 'ENSO', 'BDC', 'Radio_CPT', 'T500']
-    mask = np.triu(np.ones_like(df.corr(), dtype=np.bool))
+    corr = df.corr()  # .loc['ENSO':'T500':,'QBO':'Radio_CPT']
+    mask = np.tril(np.ones_like(corr, dtype=bool), k=0)
     f, ax = plt.subplots(figsize=(11, 9))
-    g = sns.heatmap(df.corr(), annot=True, cmap=divsci.Vik_20.mpl_colormap,
-                    center=0, fmt=".2f", vmax=1.0, mask=mask,
-                    square=True, cbar_kws={"shrink": .5}, ax=ax)
-    g.set_yticklabels(g.get_yticklabels(), rotation = 45, fontsize = 12)
-    f.tight_layout()
+    # g = sns.heatmap(corr, annot=True, cmap=divsci.Vik_20.mpl_colormap,
+    #                 center=0, fmt=".2f", vmax=1.0, vmin=-1, mask=mask,
+    #                 square=True, cbar_kws={'pad': 0.01, 'aspect':30, 'shrink':0.8}, ax=ax, cbar=True)
+    g = sns.heatmap(corr, annot=True, cmap='coolwarm', linewidths=1,
+                    linecolor='black', center=0, fmt=".2f", vmax=1.0, vmin=-1,
+                    square=True, ax=ax, cbar=True)
+    g.set_yticklabels(g.get_yticklabels(), rotation=45)
+    # f.colorbar(g)
+    # f.tight_layout()
     if save:
         filename = 'predictor_correlation_heatmap.png'
     plt.savefig(savefig_path / filename, bbox_inches='tight')
