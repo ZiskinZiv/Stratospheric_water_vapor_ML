@@ -243,8 +243,10 @@ def plot_reg_correlation_heatmap(
 
 def plot_figure_1(path=work_chaim, regressors=['qbo_cdas']):
     from ML_OOP_stratosphere_gases import run_ML
+    import seaborn as sns
     # sns.set_style('ticks', rc=rc)
-    cbar_kws = {'label': '', 'format': '%0.2f', 'aspect': 50}
+    sns.set_theme(style='ticks', font_scale=1.5)
+    cbar_kws = {'label': '', 'format': '%0.2f', 'aspect': 30, 'pad': 0.01}
     if len(regressors) == 1:
         rds = run_ML(time_period=['1984', '2019'], regressors=regressors,
                      special_run={'optimize_reg_shift': [0, 12]},
@@ -252,18 +254,24 @@ def plot_figure_1(path=work_chaim, regressors=['qbo_cdas']):
         fg = rds.r2_adj.T.plot.pcolormesh(yscale='log', yincrease=False,
                                           levels=21, col='reg_shifted',
                                           cmap=error_cmap, extend=None,
-                                          figsize=(7, 7),
-                                          cbar_kwargs=cbar_kws)
+                                          figsize=(10, 10),
+                                          cbar_kwargs=None, add_colorbar=False)
         ax = fg.axes[0][0]
-        ax.yaxis.set_major_formatter(ScalarFormatter())
 
         rds.isel(reg_shifted=0).level_month_shift.plot.line('r.-', y='level',
                                                             yincrease=False,
-                                                            ax=ax)
+                                                            ax=ax, yscale='log')
+        # ax.yaxis.set_major_formatter(ScalarFormatter())
+        ax.tick_params(axis='y', which='minor', left=False)
+        ax.set_yticks(rds['level'].values)
+        ax.get_yaxis().set_major_formatter(ScalarFormatter())
+        # ax.tick_params(axis='y', which='major', left=True)
+        # ax.get_yaxis().get_major_formatter().labelOnlyBase = False
         ax.set_xlabel('lag [months]')
         ax.set_title('')
         fg.fig.tight_layout()
         fg.fig.subplots_adjust(right=0.8)
+        fg.add_colorbar(pad=0.02, label='', aspect=30)
         print('Caption:')
         print('The adjusted R^2 for the QBO index from CDAS as a function of pressure level and month lag. The solid line and dots represent the maximum R^2 for each pressure level.')
         filename = 'r2_{}_shift_optimize.png'.format(regressors[0])
