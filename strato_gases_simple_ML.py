@@ -25,7 +25,123 @@ ml_path = work_chaim / 'ML'
 #     sorted_groups = [value for (key, value) in sorted(groups.items())]
 #     cv = [(sorted_groups[i] + sorted_groups[i+1], sorted_groups[i+2])
 #           for i in range(len(sorted_groups)-2)]
-#     return cv
+#     return cv\
+
+
+def plot_beta_coeffs(rds, col_wrap=3, figsize=(17, 5), extent=[-170, 170, -57.5, 57.5], drop_co2=True):
+    import cartopy.crs as ccrs
+    import seaborn as sns
+    import matplotlib.ticker as mticker
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+    from palettable.scientific import diverging as divsci
+    from strato_figures import remove_regressors_and_set_title
+    predict_cmap = divsci.Vik_20.mpl_colormap
+    sns.set_theme(style='ticks', font_scale=1.5)
+    proj = ccrs.PlateCarree(central_longitude=0)
+    plt_kwargs = dict(add_colorbar=False,
+                      col_wrap=col_wrap,
+                      cmap=predict_cmap, center=0.0, extend='max', vmax=0.6,
+                      levels=41, subplot_kws=dict(projection=proj),
+                      transform=ccrs.PlateCarree(), figsize=figsize)
+
+    label = r'$\beta$ coefficients'
+    gl_list = []
+    if drop_co2:
+        rds = rds.drop_sel(regressor='co2')
+        plt_kwargs.update(extend=None, vmax=None, col_wrap=2)
+    fg = rds['params'].plot.contourf(col='regressor', **plt_kwargs)
+    cbar_kws = {'label': '', 'format': '%0.2f'}
+    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])  # last num controls width
+    fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    for ax in fg.axes.flatten():
+        ax.coastlines()
+        ax.set_extent(extent, crs=ccrs.PlateCarree())
+        gl = ax.gridlines(
+            crs=ccrs.PlateCarree(),
+            linewidth=1,
+            color='black',
+            alpha=0.5,
+            linestyle='--',
+            draw_labels=True)
+        gl.xlabels_top = False
+        gl.xlabel_style = {'size': 9}
+        gl.ylabel_style = {'size': 9}
+        gl.xlines = True
+        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        gl_list.append(gl)
+        ax = remove_regressors_and_set_title(ax)
+    gl_list[0].ylabels_right = False
+    gl_list[2].ylabels_left = False
+    try:
+        gl_list[3].ylabels_right = False
+    except IndexError:
+        pass
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(right=0.96, left=0.04, wspace=0.15)
+
+    # fg = rds['params'].plot.contourf(col='regressor', **plt_kwargs)
+    # cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
+    # fg.add_colorbar(cax=cbar_ax, orientation="horizontal", label='',
+    #                 format='%0.3f')
+    # # fg.fig.suptitle(label, fontsize=12, fontweight=750)
+    # [ax.coastlines() for ax in fg.axes.flatten()]
+    # [ax.gridlines(
+    #     crs=ccrs.PlateCarree(),
+    #     linewidth=1,
+    #     color='black',
+    #     alpha=0.5,
+    #     linestyle='--',
+    #     draw_labels=False) for ax in fg.axes.flatten()]
+    fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+    return fg
+
+
+def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'co2', 'anom_nino3p4'],
+                                    lag={'qbo_cdas': 5}):
+    from sklearn.linear_model import LinearRegression
+    X = produce_X(lag=lag, regressors=predictors)
+    X = add_enso2_and_enso_qbo_to_X(X)
+    X = X.sel(time=slice('2005', '2019'))
+    y = produce_y(detrend=None, lat_band_mean=None, plevel=82, deseason='std',
+                  filename='swoosh_lonlatpress-20deg-5deg.nc', sw_var='combinedanomh2oq')
+    y = y.sel(lat=slice(-60, 60), time=slice('2005', '2019'))
+    lr = LinearRegression()
+    rds = make_results_for_MLR(lr, X, y)
+    return rds
+
+
+def make_results_for_MLR(lr, X, y):
+    import xarray as xr
+    from sklearn.metrics import r2_score
+    # assume sample dim is time:
+    target_dims = [x for x in y.dims if x != 'time']
+    # infer reg_dim from X:
+    reg_dim = [x for x in X.dims if x != 'time'][0]
+    ys = y.stack(targets=target_dims)
+    # fit the model:
+    lr.fit(X, ys)
+    rds = xr.Dataset()
+    # produce beta:
+    rds['params'] = xr.DataArray(lr.coef_, dims=['targets', reg_dim])
+    # produce predict:
+    rds['predict'] = xr.DataArray(lr.predict(X), dims=['time', 'targets'])
+    # produce R^2:
+    r2 = r2_score(ys, rds['predict'], multioutput='raw_values')
+    rds['r2'] = xr.DataArray(r2, dims='targets')
+    # dims:
+    rds[reg_dim] = X[reg_dim]
+    rds['time'] = ys['time']
+    rds['targets'] = ys['targets']
+    # unstack:
+    rds = rds.unstack('targets')
+    rds['original'] = y
+    rds.attrs['sample_dim'] = 'time'
+    rds.attrs['feature_dim'] = 'regressor'
+    return rds
+
 
 def plot_forecast_busts_lines_datetime(ax, color='r', style='--'):
     import pandas as pd
@@ -40,6 +156,7 @@ def plot_forecast_busts_lines_datetime(ax, color='r', style='--'):
 
 
 def plot_model_predictions(da):
+    """ run produce_CV_predictions_for_all_HP_optimized_models first"""
     import seaborn as sns
     import matplotlib.pyplot as plt
     from aux_functions_strat import convert_da_to_long_form_df
@@ -53,10 +170,10 @@ def plot_model_predictions(da):
     plt.setp(ax.lines[4], linewidth=2.5)
     ax.grid(True)
     ax.set_xlabel('')
-    ax.set_ylabel('H2O anomalies [std]')
+    ax.set_ylabel(r'H$_{2}$O anomalies [std]')
     ax.xaxis.set_minor_locator(AutoMinorLocator())
     ax.xaxis.grid(True, which='minor')
-    legend = ax.legend(prop={'size': 10})
+    legend = ax.legend(prop={'size': 13}, ncol=5, loc='upper left')
     plot_forecast_busts_lines_datetime(ax, color='k')
     fig.tight_layout()
     # get handles and labels of legend:
@@ -69,9 +186,13 @@ def plot_model_predictions(da):
 
 
 def add_enso2_and_enso_qbo_to_X(X):
+    import xarray as xr
     from ML_OOP_stratosphere_gases import poly_features
-    X = poly_features(X, feature_dim='regressor')
-    X = X.drop_sel(regressor='qbo_cdas^2')
+    feats = [x for x in X.regressor.values if 'qbo' in x or 'nino' in x]
+    other_feats = [x for x in X.regressor.values if 'qbo' not in x and 'nino'  not in x]
+    X1 = poly_features(X.sel(regressor=feats), feature_dim='regressor')
+    X1 = X1.drop_sel(regressor='qbo_cdas^2')
+    X = xr.concat([X.sel(regressor=other_feats), X1], 'regressor')
     return X
 
 
@@ -167,6 +288,7 @@ def plot_feature_importances_RF(fi_da):
 
 
 def plot_repeated_kfold_dist(df, model_dict, X, y):
+    """run assemble_cvr_dataframe first with strategy=Nonen and add_MLR2"""
     import seaborn as sns
     sns.set_theme(style='ticks', font_scale=1.5)
     in_sample_r2 = {}
@@ -329,7 +451,7 @@ def get_HP_params_from_optimized_model(path=ml_path, model='SVM'):
 
 
 def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
-              lag={'qbo_cdas': 5}):
+              lag={'qbo_cdas': 5}, add_co2=True):
     from make_regressors import load_all_regressors
     ds = load_all_regressors()
     ds = ds[regressors].dropna('time')
@@ -337,6 +459,8 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
         for key, value in lag.items():
             print(key, value)
             ds[key] = ds[key].shift(time=value)
+    if add_co2:
+        ds['co2'] = produce_co2_trend()
     X = ds.dropna('time').to_array('regressor')
     X = X.transpose('time', 'regressor')
     return X
@@ -344,7 +468,7 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
 
 def produce_y(path=work_chaim, detrend='lowess',
               sw_var='combinedeqfillanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
-              lat_mean=[-30, 30], plevel=82, deseason='std'):
+              lat_band_mean=[-5, 5], plevel=82, deseason='std'):
     import xarray as xr
     from aux_functions_strat import lat_mean
     from aux_functions_strat import detrend_ts
@@ -353,15 +477,29 @@ def produce_y(path=work_chaim, detrend='lowess',
     da = xr.open_dataset(file)[sw_var]
     if plevel is not None:
         da = da.sel(level=plevel, method='nearest')
-    if lat_mean is not None:
+    if lat_band_mean is not None:
         da = lat_mean(da)
     if detrend is not None:
         if detrend == 'lowess':
             da = detrend_ts(da)
     if deseason is not None:
-        da = anomalize_xr(da, freq='MS', units=deseason)
+        da = anomalize_xr(da, freq='MS', units=deseason, time_dim='time')
     y = da
     return y
+
+
+def produce_co2_trend(standertize=True):
+    from make_regressors import load_all_regressors
+    from aux_functions_strat import loess_curve
+    ds = load_all_regressors()
+    co2 = ds['co2'].dropna('time')
+    trend = loess_curve(co2, plot=False)
+    if standertize:
+        co2 = (trend['mean']-trend['mean'].mean('time')) / \
+            trend['mean'].std('time')
+        return co2
+    else:
+        return trend['mean']
 
 
 def r2_adj_score(y_true, y_pred, **kwargs):
