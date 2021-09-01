@@ -129,10 +129,12 @@ def remove_regressors_and_set_title(ax, set_title_only=None):
     short_titles = {'qbo_cdas': 'QBO',
                     'anom_nino3p4': 'ENSO',
                     'ch4': 'CH4',
+                    'co2': r'CO$_2$',
                     'era5_bdc': 'BDC',
                     'era5_t500': 'T at 500hPa',
                     'anom_nino3p4^2': r'ENSO$^2$',
                     'anom_nino3p4*q...': r'ENSO $\times$ QBO',
+                    'qbo_cdas*anom_n...': r'ENSO $\times$ QBO',
                     '1': r'(QBO + ENSO + CH4) = $\eta_1$',
                     '2': r'$\eta_1$ + T500 + BDC',
                     '3': r'$\eta_1$ + $\sum^6_{i=0}$CPT(t-$i$)',
@@ -183,11 +185,11 @@ def change_xticks_years(ax, start=1984, end=2018):
     return ax
 
 
-def plot_predictor_corr_heatmap(save=True):
+def plot_predictor_corr_heatmap(save=True, time_period=['1994', '2019']):
     import seaborn as sns
     import numpy as np
     sns.set_theme(style='ticks', font_scale=1.5)
-    df = plot_reg_correlation_heatmap(
+    df = plot_reg_correlation_heatmap(time_period=time_period,
         regs=[
             'qbo_cdas',
             'anom_nino3p4',
@@ -195,23 +197,28 @@ def plot_predictor_corr_heatmap(save=True):
             'radio_cold_no_qbo',
             'era5_t500'],
         return_df=True)
-    df.columns = ['QBO', 'ENSO', 'BDC', 'Radio_CPT', 'T500']
+    df.columns = ['QBO', 'ENSO', 'BDC', 'CPT', 'T500']
     corr = df.corr()  # .loc['ENSO':'T500':,'QBO':'Radio_CPT']
-    mask = np.tril(np.ones_like(corr, dtype=bool), k=0)
-    f, ax = plt.subplots(figsize=(11, 9))
-    # g = sns.heatmap(corr, annot=True, cmap=divsci.Vik_20.mpl_colormap,
-    #                 center=0, fmt=".2f", vmax=1.0, vmin=-1, mask=mask,
-    #                 square=True, cbar_kws={'pad': 0.01, 'aspect':30, 'shrink':0.8}, ax=ax, cbar=True)
-    g = sns.heatmap(corr, annot=True, cmap='coolwarm', linewidths=1,
-                    linecolor='black', center=0, fmt=".2f", vmax=1.0, vmin=-1,
-                    square=True, ax=ax, cbar=True)
+    mask = np.triu(np.ones_like(corr, dtype=bool), k=0)
+    f, ax = plt.subplots(figsize=(11, 10))
+    cbar_kws={'pad': 0.01, 'aspect':30, 'shrink':0.8, 'location':'top', "use_gridspec" : False}
+    g = sns.heatmap(corr, annot=True, cmap=divsci.Vik_20.mpl_colormap,
+                    center=0, fmt=".2f", vmax=1.0, vmin=-1, mask=mask,
+                    square=True, ax=ax, cbar=True, cbar_kws=cbar_kws)
+    # g = sns.heatmap(corr, annot=True, cmap='coolwarm', linewidths=1,
+    #                 linecolor='black', center=0, fmt=".2f", vmax=1.0, vmin=-1,
+    #                 square=True, ax=ax, cbar=True)
     g.set_yticklabels(g.get_yticklabels(), rotation=45)
+    # cbar_kws.update({'label': '', 'format': '%0.2f'})
+    # cbar_ax = g.figure.add_axes([0.1, 0.1, .8, .035])  # last num controls width
+    # plt.colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+
     # f.colorbar(g)
     # f.tight_layout()
     if save:
         filename = 'predictor_correlation_heatmap.png'
     plt.savefig(savefig_path / filename, bbox_inches='tight')
-    return df
+    return g
 
 
 def plot_reg_correlation_heatmap(
@@ -383,7 +390,7 @@ def plot_figure_4(path=work_chaim):
         ax.xaxis.set_major_formatter(lat_formatter)
         ax.set_xlabel('')
         ax = remove_regressors_and_set_title(ax)
-        
+
     fg = add_horizontal_colorbar(fg, [0.125, 0.1, 0.8, 0.02],
                                  cbar_kwargs_dict={'label': ''})
     fg.fig.tight_layout()
@@ -416,7 +423,7 @@ def plot_latlon_predict(ncfile, path=work_chaim, geo='lat', level=82.54,
         regs = [x for x in rds['regressors'].values]
     if lat_slice is not None:
         rds = rds.sel(lat=slice(*lat_slice))
-    
+
     if species == 'H2O':
         geo_title = {
                 'lat': r'Area-averaged (from 180$\degree$W to 180$\degree$E longitudes) combined H2O anomaly for the {} hPa pressure level'.format(level),
@@ -535,7 +542,7 @@ def plot_figure_7(path=work_chaim):
     ncfile = 'MLR_H2O_latpress_seasons_cdas-plags_ch4_enso_1984-2019.nc'
     fg = plot_figure_seasons(ncfile, path, field='params')
     print('Caption: ')
-    print('The beta coefficients for the water vapor MLR season analysis for pressure levels vs. latitude with  CH4, ENSO  pressure level lag varied QBO as predictors. This MLR analysis spanned from 1984 to 2018. Note that ENSO is dominant in the MAM season')  
+    print('The beta coefficients for the water vapor MLR season analysis for pressure levels vs. latitude with  CH4, ENSO  pressure level lag varied QBO as predictors. This MLR analysis spanned from 1984 to 2018. Note that ENSO is dominant in the MAM season')
     return fg
 
 
@@ -831,7 +838,7 @@ def plot_figure_seasons_map(path=work_chaim, rds=None, field='r2_adj', level=82,
 def plot_figure_response_predict_maps(path=work_chaim, ncfile=None,
                                       species='H2O',
                                       field='response', bust='2010D-2011JFM',
-                                      time_mean=None, time=None, 
+                                      time_mean=None, time=None,
                                       proj_key='PlateCarree',
                                       plot_kwargs=None, save=True):
     """response/predict maps (lat-lon) for cdas-plags, enso, ch4 for 2010D-2011JFM bust"""
@@ -1130,7 +1137,7 @@ def plot_figure_poly2_lon(path=work_chaim):
     ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc'
     fg = plot_latlon_predict(ncfile, path=path, geo='lon', level=82.54,
                              bust_lines=True, save=True)
-    
+
 def plot_figure_poly2_params(path=work_chaim):
     ncfile = 'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc'
     fg = plot_feature_map(
