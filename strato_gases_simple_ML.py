@@ -485,7 +485,7 @@ def get_HP_params_from_optimized_model(path=ml_path, model='SVM'):
 
 
 def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
-              lag={'qbo_cdas': 5}, add_co2=True):
+              lag={'qbo_cdas': 5}, add_co2=True, standertize=True):
     from make_regressors import load_all_regressors
     ds = load_all_regressors()
     ds = ds[regressors].dropna('time')
@@ -493,6 +493,8 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
         for key, value in lag.items():
             print(key, value)
             ds[key] = ds[key].shift(time=value)
+    if standertize:
+        ds = (ds - ds.mean('time')) / ds.std('time')
     if add_co2:
         ds['co2'] = produce_co2_trend()
     X = ds.dropna('time').to_array('regressor')
