@@ -28,7 +28,7 @@ ml_path = work_chaim / 'ML'
 #     return cv\
 
 
-def plot_beta_coeffs(rds, col_wrap=3, figsize=(17, 5), extent=[-170, 170, -57.5, 57.5], drop_co2=True):
+def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5, 57.5], drop_co2=True):
     import cartopy.crs as ccrs
     import seaborn as sns
     import matplotlib.ticker as mticker
@@ -74,13 +74,22 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(17, 5), extent=[-170, 170, -57.5,
         gl_list.append(gl)
         ax = remove_regressors_and_set_title(ax)
     gl_list[0].ylabels_right = False
-    gl_list[2].ylabels_left = False
+    gl_list[1].ylabels_right = False
+    gl_list[1].ylabels_left = True
+    gl_list[2].ylabels_right = False
+    gl_list[3].ylabels_left = True
+    gl_list[3].ylabels_right = True
     try:
         gl_list[3].ylabels_right = False
     except IndexError:
         pass
     fg.fig.tight_layout()
-    fg.fig.subplots_adjust(right=0.96, left=0.04, wspace=0.15)
+    fg.fig.subplots_adjust(top=0.93,
+                           bottom=0.2,
+                           left=0.05,
+                           right=0.979,
+                           hspace=0.275,
+                           wspace=0.044)
 
     # fg = rds['params'].plot.contourf(col='regressor', **plt_kwargs)
     # cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])
@@ -99,11 +108,37 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(17, 5), extent=[-170, 170, -57.5,
     return fg
 
 
-def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'co2', 'anom_nino3p4'],
-                                    lag={'qbo_cdas': 5}):
+def produce_rds_etas(eta=1):
+    """ run produce_MLR_2D_for_figs_6_and_7 with regressors:
+        eta=1 : co2, anom_nino3p4, qbo_lagged
+        eta=2 : co2, anom_nino3p4, qbo_lagged, T500, BDC
+        eta=3 : co2, anom_nino3p4, qbo_lagged + 6XCPT_lagged
+        eta=4 : co2, anom_nino3p4, qbo_lagged, anom_nino3p4^2, qbo_laggedXanom_nino3p4
+        co2 is automatically added"""
+    pred = ['qbo_cdas', 'anom_nino3p4']
+    if eta == 1:
+        print('producing eta {} with {}'.format(eta, pred))
+        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
+    elif eta == 2:
+        pred = pred + ['bdc', 't500']
+        print('producing eta {} with {}'.format(eta, pred))
+        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
+    elif eta == 3:
+        pred = pred + ['cpt']
+        print('producing eta {} with {}'.format(eta, pred))
+        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
+    elif eta == 4:
+        print('producing eta {} with {} and enso^2'.format(eta, pred))
+        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=True)
+    return rds
+        
+
+def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'anom_nino3p4'],
+                                    lag={'qbo_cdas': 5}, add_enso2=True):
     from sklearn.linear_model import LinearRegression
-    X = produce_X(lag=lag, regressors=predictors)
-    X = add_enso2_and_enso_qbo_to_X(X)
+    X = produce_X(lag=lag, regressors=predictors, add_co2=True)
+    if add_enso2:
+        X = add_enso2_and_enso_qbo_to_X(X)
     X = X.sel(time=slice('2005', '2019'))
     y = produce_y(detrend=None, lat_band_mean=None, plevel=82, deseason='std',
                   filename='swoosh_lonlatpress-20deg-5deg.nc', sw_var='combinedanomh2oq')
@@ -239,7 +274,6 @@ def cross_val_predict_da(estimator, X, y, cv='kfold'):
     return da_ts
 
 
-def plot_feature_importances_RF(fi_da):
     import seaborn as sns
     import numpy as np
     import matplotlib.pyplot as plt
