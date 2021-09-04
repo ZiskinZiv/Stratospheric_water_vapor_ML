@@ -26,6 +26,114 @@ ml_path = work_chaim / 'ML'
 #     cv = [(sorted_groups[i] + sorted_groups[i+1], sorted_groups[i+2])
 #           for i in range(len(sorted_groups)-2)]
 #     return cv\
+def ABS_SHAP(df_shap, df):
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+    sns.set_theme(style='ticks', font_scale=1.2)
+    #import matplotlib as plt
+    # Make a copy of the input data
+    shap_v = pd.DataFrame(df_shap)
+    feature_list = df.columns
+    shap_v.columns = feature_list
+    df_v = df.copy().reset_index().drop('time', axis=1)
+
+    # Determine the correlation in order to plot with different colors
+    corr_list = list()
+    for i in feature_list:
+        b = np.corrcoef(shap_v[i], df_v[i])[1][0]
+        corr_list.append(b)
+    corr_df = pd.concat(
+        [pd.Series(feature_list), pd.Series(corr_list)], axis=1).fillna(0)
+    # Make a data frame. Column 1 is the feature, and Column 2 is the correlation coefficient
+    corr_df.columns = ['Predictor', 'Corr']
+    corr_df['Sign'] = np.where(corr_df['Corr'] > 0, 'red', 'blue')
+
+    # Plot it
+    shap_abs = np.abs(shap_v)
+    k = pd.DataFrame(shap_abs.mean()).reset_index()
+    k.columns = ['Predictor', 'SHAP_abs']
+    k2 = k.merge(corr_df, left_on='Predictor', right_on='Predictor', how='inner')
+    k2 = k2.sort_values(by='SHAP_abs', ascending=True)
+    colorlist = k2['Sign']
+    ax = k2.plot.barh(x='Predictor', y='SHAP_abs',
+                      color=colorlist, figsize=(5, 6), legend=False)
+    ax.set_xlabel("SHAP Value (Red = Positive Impact)")
+    return
+
+
+def plot_simplified_shap_tree_explainer(rf_model):
+    import shap
+    X = produce_X(lag={'qbo_cdas': 5})
+    y = produce_y(detrend=None)
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
+    rf_model.fit(X, y)
+    dfX = X.to_dataset('regressor').to_dataframe()
+    dfX = dfX.rename(
+        {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO', 'co2': r'CO$_2$'}, axis=1)
+    ex_rf = shap.Explainer(rf_model)
+    shap_values_rf = ex_rf.shap_values(dfX)
+    ABS_SHAP(shap_values_rf, dfX)
+    return
+
+
+def plot_Tree_explainer_shap(rf_model):
+    import shap
+    X = produce_X(lag={'qbo_cdas': 5})
+    y = produce_y(detrend=None)
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
+    rf_model.fit(X, y)
+    dfX = X.to_dataset('regressor').to_dataframe()
+    dfX = dfX.rename(
+        {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO', 'co2': r'CO$_2$'}, axis=1)
+    fi = dict(zip(dfX.columns, rf_model.feature_importances_ * 100))
+    print(fi)
+    ex_rf = shap.Explainer(rf_model)
+    shap_values_rf = ex_rf.shap_values(dfX)
+    shap.summary_plot(shap_values_rf, dfX, plot_size=1.1)
+    return
+
+
+def plot_model_prediction_fig_3():
+    from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
+    from sklearn.linear_model import LinearRegression
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    X = produce_X()
+    X = add_enso2_and_enso_qbo_to_X(X)
+    y = produce_y(detrend=None)
+    X_test = X.sel(time=slice('1994', '2019'))
+    y_test = y.sel(time=slice('1994', '2019'))
+    X_train = X.sel(time=slice('2005', '2019'))
+    y_train = y.sel(time=slice('2005', '2019'))
+    lr = LinearRegression()
+    rds = make_results_for_MLR(lr, X_train, y_train, X_test=X_test, y_test=y_test)
+    df = rds['predict'].to_dataframe()
+    df['y_true'] = y_test.to_dataframe()
+    df['resid'] = df['predict'] - df['y_true']
+    df = df.rename({'resid': 'Residuals', 'predict': 'MLR', 'y_true': 'SWOOSH'}, axis=1)
+    sns.set_theme(style='ticks', font_scale=1.5)
+    fig, ax = plt.subplots(2, 1, figsize=(18, 7))
+    df[['SWOOSH', 'MLR']].plot(ax=ax[0], color=['tab:purple', 'tab:red'])
+    df[['Residuals']].plot(ax=ax[1], color='k', legend=False)
+    [x.grid(True) for x in ax]
+    [x.set_xlabel('') for x in ax]
+    ax[0].set_ylabel(r'H$_{2}$O anomalies [std]')
+    ax[1].set_ylabel(r'H$_{2}$O residuals [std]')
+    [x.xaxis.set_minor_locator(AutoMinorLocator()) for x in ax]
+    [x.xaxis.grid(True, which='minor') for x in ax]
+    # legend = ax.legend(prop={'size': 13}, ncol=5, loc='upper left')
+    plot_forecast_busts_lines_datetime(ax[0], color='k')
+    fig.tight_layout()
+    # # get handles and labels of legend:
+    # hands, labes = ax.get_legend_handles_labels()
+    # colors = [x.get_color() for x in hands]
+    # # change the text labels to the colors of the lines:
+    # for i, text in enumerate(legend.get_texts()):
+    #     text.set_color(colors[i])
+    return fig
 
 
 def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5, 57.5], drop_co2=True):
@@ -104,7 +212,108 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
     #     alpha=0.5,
     #     linestyle='--',
     #     draw_labels=False) for ax in fg.axes.flatten()]
-    fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+    # fg.fig.subplots_adjust(bottom=0.2, top=0.9, left=0.05)
+    return fg
+
+
+def plot_r2_map_predictor_sets_with_co2(path=work_chaim, save=True):
+    """r2 map (lat-lon) for cdas-plags, enso, ch4"""
+    import xarray as xr
+    import cartopy.crs as ccrs
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as mticker
+    import seaborn as sns
+    from strato_figures import remove_regressors_and_set_title
+    from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
+    from palettable.colorbrewer import sequential as seqbr
+    # from palettable.scientific import diverging as divsci
+    # from palettable.colorbrewer import diverging as divbr
+    from strat_paths import savefig_path
+
+    error_cmap = seqbr.YlGnBu_9.mpl_colormap
+    sns.set_theme(style='ticks', font_scale=1.5)
+
+    # rds1 = xr.open_dataset(
+    #             path /
+    #             'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
+    # rds2 = xr.open_dataset(
+    #         path /
+    #         'MLR_H2O_latlon_cdas-plags_ch4_enso_bdc_t500_2004-2019.nc')
+    # rds3 = xr.open_dataset(
+    #         path /
+    #         'MLR_H2O_latlon_cdas-plags_ch4_enso_radio_cold_lags6_2004-2019.nc')
+    # rds4 = xr.open_dataset(
+    #     path /
+    #     'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc')
+    rds1 = produce_rds_etas(eta=1)
+    rds2 = produce_rds_etas(eta=2)
+    rds3 = produce_rds_etas(eta=3)
+    rds4 = produce_rds_etas(eta=4)
+    rds = xr.concat([x['r2'] for x in [rds1, rds2, rds3, rds4]], 'eta')
+    rds['eta'] = range(1, 5)
+    rds = rds.sortby('eta')
+#    fig = plt.figure(figsize=(11, 5))
+#    ax = fig.add_subplot(1, 1, 1,
+#                         projection=ccrs.PlateCarree(central_longitude=0))
+#    ax.coastlines()
+    proj = ccrs.PlateCarree(central_longitude=0)
+    fg = rds.plot.contourf(col='eta', add_colorbar=False, cmap=error_cmap,
+                           vmin=0.0, extend=None, levels=41, col_wrap=2,
+                           subplot_kws=dict(projection=proj),
+                           transform=ccrs.PlateCarree(), figsize=(13, 6))
+#    lons = rds.lon.values[0:int(len(rds.lon.values) / 2)][::2]
+#    lons_mirror = abs(lons[::-1])
+#    lons = np.concatenate([lons, lons_mirror])
+#    lats = rds.lat.values[0:int(len(rds.lat.values) / 2)][::2]
+#    lats_mirror = abs(lats[::-1])
+#    lats = np.concatenate([lats, lats_mirror])
+    # ax.set_xticks(lons, crs=ccrs.PlateCarree())
+    # ax.set_yticks(lats, crs=ccrs.PlateCarree())
+    # lon_formatter = LongitudeFormatter(zero_direction_label=True)
+    # lat_formatter = LatitudeFormatter()
+    # ax.xaxis.set_major_formatter(lon_formatter)
+    # ax.yaxis.set_major_formatter(lat_formatter)
+    cbar_kws = {'label': '', 'format': '%0.2f', 'aspect': 20}
+    cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])  # last num controls width
+    fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    gl_list = []
+    for ax in fg.axes.flatten():
+        ax.coastlines()
+        gl = ax.gridlines(
+            crs=ccrs.PlateCarree(),
+            linewidth=1,
+            color='black',
+            alpha=0.5,
+            linestyle='--',
+            draw_labels=True)
+        gl.xlabels_top = False
+        gl.xlabel_style = {'size': 9}
+        gl.ylabel_style = {'size': 9}
+        gl.xlines = True
+        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        gl.xformatter = LONGITUDE_FORMATTER
+        gl.yformatter = LATITUDE_FORMATTER
+        gl_list.append(gl)
+        ax = remove_regressors_and_set_title(ax)
+    # gl_list[0].ylabels_right = False
+    # gl_list[2].ylabels_left = False
+#    try:
+#        gl_list[3].ylabels_right = False
+#    except IndexError:
+#        pass
+    fg.fig.tight_layout()
+    fg.fig.subplots_adjust(top=0.99,
+                           bottom=0.16,
+                           left=0.065,
+                           right=0.935,
+                           hspace=0.0,
+                           wspace=0.288)
+    print('Caption: ')
+    print('The adjusted R^2 for the water vapor anomalies MLR analysis in the 82 hPa level with CH4 ,ENSO, and pressure level lag varied QBO as predictors. This MLR spans from 2004 to 2018')
+    filename = 'MLR_H2O_r2_map_82_eta_with_co2.png'
+    if save:
+        plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
 
 
@@ -120,61 +329,96 @@ def produce_rds_etas(eta=1):
         print('producing eta {} with {}'.format(eta, pred))
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
     elif eta == 2:
-        pred = pred + ['bdc', 't500']
+        pred = pred + ['era5_bdc70', 'era5_t500']
         print('producing eta {} with {}'.format(eta, pred))
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
     elif eta == 3:
-        pred = pred + ['cpt']
+        pred = pred + ['radio_cold_no_qbo']
         print('producing eta {} with {}'.format(eta, pred))
-        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
+        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['radio_cold_no_qbo', 6])
     elif eta == 4:
         print('producing eta {} with {} and enso^2'.format(eta, pred))
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=True)
     return rds
-        
+
 
 def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'anom_nino3p4'],
-                                    lag={'qbo_cdas': 5}, add_enso2=True):
+                                    lag={'qbo_cdas': 5}, add_enso2=True,
+                                    reg_shift=None):
     from sklearn.linear_model import LinearRegression
-    X = produce_X(lag=lag, regressors=predictors, add_co2=True)
+    X = produce_X(lag=lag, regressors=predictors, add_co2=True, reg_shift=reg_shift)
     if add_enso2:
         X = add_enso2_and_enso_qbo_to_X(X)
     X = X.sel(time=slice('2005', '2019'))
     y = produce_y(detrend=None, lat_band_mean=None, plevel=82, deseason='std',
                   filename='swoosh_lonlatpress-20deg-5deg.nc', sw_var='combinedanomh2oq')
-    y = y.sel(lat=slice(-60, 60), time=slice('2005', '2019'))
+    y = y.sel(lat=slice(-60, 60))
+    y = y.sel(time=X.time)
     lr = LinearRegression()
     rds = make_results_for_MLR(lr, X, y)
     return rds
 
 
-def make_results_for_MLR(lr, X, y):
+def make_results_for_MLR(lr, X_train, y_train, X_test=None, y_test=None):
     import xarray as xr
     from sklearn.metrics import r2_score
-    # assume sample dim is time:
-    target_dims = [x for x in y.dims if x != 'time']
-    # infer reg_dim from X:
-    reg_dim = [x for x in X.dims if x != 'time'][0]
-    ys = y.stack(targets=target_dims)
-    # fit the model:
-    lr.fit(X, ys)
-    rds = xr.Dataset()
-    # produce beta:
-    rds['params'] = xr.DataArray(lr.coef_, dims=['targets', reg_dim])
-    # produce predict:
-    rds['predict'] = xr.DataArray(lr.predict(X), dims=['time', 'targets'])
-    # produce R^2:
-    r2 = r2_score(ys, rds['predict'], multioutput='raw_values')
-    rds['r2'] = xr.DataArray(r2, dims='targets')
-    # dims:
-    rds[reg_dim] = X[reg_dim]
-    rds['time'] = ys['time']
-    rds['targets'] = ys['targets']
-    # unstack:
-    rds = rds.unstack('targets')
-    rds['original'] = y
-    rds.attrs['sample_dim'] = 'time'
-    rds.attrs['feature_dim'] = 'regressor'
+    if len(y_train.dims) > 1:
+        # assume sample dim is time:
+        target_dims = [x for x in y_train.dims if x != 'time']
+        # infer reg_dim from X:
+        reg_dim = [x for x in X_train.dims if x != 'time'][0]
+        ys_train = y_train.stack(targets=target_dims)
+        # fit the model:
+        lr.fit(X_train, ys_train)
+        rds = xr.Dataset()
+        # produce beta:
+        rds['params'] = xr.DataArray(lr.coef_, dims=['targets', reg_dim])
+        # produce predict:
+        if X_test is not None:
+            rds['predict'] = xr.DataArray(lr.predict(X_test), dims=['time', 'targets'])
+        else:
+            rds['predict'] = xr.DataArray(lr.predict(X_train), dims=['time', 'targets'])
+        # produce R^2:
+        if y_test is not None:
+            ys_test = y_test.stack(targets=target_dims)
+            r2 = r2_score(ys_test, rds['predict'], multioutput='raw_values')
+        else:
+            r2 = r2_score(ys_train, rds['predict'], multioutput='raw_values')
+        rds['r2'] = xr.DataArray(r2, dims='targets')
+        # dims:
+        rds[reg_dim] = X_train[reg_dim]
+        rds['time'] = ys_train['time']
+        rds['targets'] = ys_train['targets']
+        # unstack:
+        rds = rds.unstack('targets')
+        rds['original'] = y_train
+        rds.attrs['sample_dim'] = 'time'
+        rds.attrs['feature_dim'] = 'regressor'
+    elif len(y_train.dims) == 1:
+        reg_dim = [x for x in X_train.dims if x != 'time'][0]
+        # fit the model:
+        lr.fit(X_train, y_train)
+        rds = xr.Dataset()
+        # produce beta:
+        rds['params'] = xr.DataArray(lr.coef_, dims=[reg_dim])
+        # produce predict:
+        if X_test is not None:
+            rds['predict'] = xr.DataArray(lr.predict(X_test), dims=['time'])
+            rds['time'] = y_test['time']
+        else:
+            rds['predict'] = xr.DataArray(lr.predict(X_train), dims=['time'])
+            rds['time'] = y_train['time']
+        # produce R^2:
+        if y_test is not None:
+            r2 = r2_score(y_test, rds['predict'])
+        else:
+            r2 = r2_score(y_train, rds['predict'])
+        rds['r2'] = xr.DataArray(r2)
+        # dims:
+        rds[reg_dim] = X_train[reg_dim]
+        rds['original'] = y_train
+        rds.attrs['sample_dim'] = 'time'
+        rds.attrs['feature_dim'] = 'regressor'
     return rds
 
 
@@ -336,12 +580,16 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
             in_sample_r2[model_name] = model.score(X, y)
     print(in_sample_r2)
     df_melted = df.T.melt(var_name='model', value_name=r'R$^2$')
+    pal = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:pink']
     fg = sns.displot(data=df_melted, x=r'R$^2$', col="model",
                      kind="hist", col_wrap=2, hue='model', stat='density',
-                     kde=True)
-    for ax in fg.axes:
+                     kde=True, palette=pal)
+    letter = ['a', 'b', 'c', 'd', 'e']
+    for i, ax in enumerate(fg.axes):
         label = ax.title.get_text()
         model = label.split('=')[-1].strip()
+        title = '({}) model = {}'.format(letter[i], model)
+        ax.set_title(title)
         mean = df.T.mean().loc[model]
         std = df.T.std().loc[model]
         median = df.T.median().loc[model]
@@ -485,8 +733,13 @@ def get_HP_params_from_optimized_model(path=ml_path, model='SVM'):
 
 
 def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
-              lag={'qbo_cdas': 5}, add_co2=True, standertize=True):
+              lag={'qbo_cdas': 5}, add_co2=True, standertize=True,
+              reg_shift=None):
+    """reg_shift is dict = {regressor: n} where n is the number of times to
+    shift backwards one month"""
     from make_regressors import load_all_regressors
+    from ML_OOP_stratosphere_gases import regressor_shift
+    import xarray as xr
     ds = load_all_regressors()
     ds = ds[regressors].dropna('time')
     if lag is not None:
@@ -497,6 +750,9 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
         ds = (ds - ds.mean('time')) / ds.std('time')
     if add_co2:
         ds['co2'] = produce_co2_trend()
+    if reg_shift is not None:
+        dss = regressor_shift(ds[reg_shift[0]].dropna('time'), shifts=[1,reg_shift[-1]])
+        ds = xr.merge([ds, dss])
     X = ds.dropna('time').to_array('regressor')
     X = X.transpose('time', 'regressor')
     return X
@@ -504,7 +760,7 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
 
 def produce_y(path=work_chaim, detrend='lowess',
               sw_var='combinedeqfillanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
-              lat_band_mean=[-5, 5], plevel=82, deseason='std'):
+              lat_band_mean=[-5, 5], plevel=82, deseason='mean', standertize=True):
     import xarray as xr
     from aux_functions_strat import lat_mean
     from aux_functions_strat import detrend_ts
@@ -520,6 +776,8 @@ def produce_y(path=work_chaim, detrend='lowess',
             da = detrend_ts(da)
     if deseason is not None:
         da = anomalize_xr(da, freq='MS', units=deseason, time_dim='time')
+    if standertize is not None:
+        da = (da - da.mean('time')) / da.std('time')
     y = da
     return y
 
