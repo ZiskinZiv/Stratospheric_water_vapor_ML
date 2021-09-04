@@ -126,19 +126,19 @@ def remove_anomaly_and_set_title(ax, species='H2O'):
 
 
 def remove_regressors_and_set_title(ax, set_title_only=None):
-    short_titles = {'qbo_cdas': 'a) QBO',
-                    'anom_nino3p4': 'b) ENSO',
+    short_titles = {'qbo_cdas': '(a) QBO',
+                    'anom_nino3p4': '(b) ENSO',
                     'ch4': 'CH4',
                     'co2': r'CO$_2$',
                     'era5_bdc': 'BDC',
                     'era5_t500': 'T at 500hPa',
-                    'anom_nino3p4^2': r'd) ENSO$^2$',
-                    'anom_nino3p4*q...': r'c) ENSO $\times$ QBO',
-                    'qbo_cdas*anom_n...': r'c) ENSO $\times$ QBO',
-                    '1': r'(QBO + ENSO + CH4) = $\eta_1$',
-                    '2': r'$\eta_1$ + T500 + BDC',
-                    '3': r'$\eta_1$ + $\sum^6_{i=0}$CPT(t-$i$)',
-                    '4': r'$\eta_1$ + QBO $\times$ ENSO + ENSO$^2$'}
+                    'anom_nino3p4^2': r'(d) ENSO$^2$',
+                    'anom_nino3p4*q...': r'(c) ENSO $\times$ QBO',
+                    'qbo_cdas*anom_n...': r'(c) ENSO $\times$ QBO',
+                    '1': r'(a) $\eta_1$ = QBO + ENSO + CO$_2$',
+                    '2': r'(b) $\eta_1$ + T500 + BDC',
+                    '3': r'(c) $\eta_1$ + $\sum^5_{i=0}$CPT(t-$i$)',
+                    '4': r'(d) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$'}
     title = ax.get_title()
     title = title.split('=')[-1].strip(' ')
     if set_title_only is not None:
