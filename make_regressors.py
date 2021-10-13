@@ -218,6 +218,23 @@ def load_regressor(regressor_file, plot=True, deseason=True, normalize=False,
     return reg
 
 
+def split_anom_nino3p4_to_EN_LN_neutral(loadpath=reg_path, savepath=None):
+    ds = load_all_regressors(loadpath)
+    enso = ds['anom_nino3p4'].dropna('time')
+    EN = enso[enso >= 0.5].reindex(time=enso['time']).fillna(0)
+    EN.attrs['action'] = 'only EN (ENSO >=0.5) kept, other is 0.'
+    LN = enso[enso <= -0.5].reindex(time=enso['time']).fillna(0)
+    LN.attrs['action'] = 'only LN (ENSO <=-0.5) kept, other is 0.'
+    neutral = enso[(enso > -0.5) & (enso < 0.5)
+                   ].reindex(time=enso['time']).fillna(0)
+    neutral.attrs['action'] = 'only neutENSO (ENSO<0.5 & ENSO>-0.5) kept, other is 0.'
+    if savepath is not None:
+        EN.to_netcdf(savepath / 'EN_index.nc')
+        LN.to_netcdf(savepath / 'LN_index.nc')
+        neutral.to_netcdf(savepath / 'neutENSO_index.nc')
+    return EN, LN, neutral
+
+
 def _produce_wind_shear(source='singapore', savepath=None):
     import xarray as xr
     from pathlib import Path
