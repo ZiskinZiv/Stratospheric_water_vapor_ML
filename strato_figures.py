@@ -128,6 +128,9 @@ def remove_anomaly_and_set_title(ax, species='H2O'):
 def remove_regressors_and_set_title(ax, set_title_only=None):
     short_titles = {'qbo_cdas': '(a) QBO',
                     'anom_nino3p4': '(b) ENSO',
+                    'EN': '(c) El-nino',
+                    'LN': '(b) La-nina',
+                    'neutENSO': '(d) neutENSO',
                     'ch4': 'CH4',
                     'co2': r'CO$_2$',
                     'era5_bdc': 'BDC',
