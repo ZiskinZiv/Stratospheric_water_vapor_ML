@@ -216,7 +216,8 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
     return fg
 
 
-def plot_r2_map_predictor_sets_with_co2(path=work_chaim, save=True):
+def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
+                                        save=True):
     """r2 map (lat-lon) for cdas-plags, enso, ch4"""
     import xarray as xr
     import cartopy.crs as ccrs
@@ -247,7 +248,7 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, save=True):
     #     'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc')
     rds1 = produce_rds_etas(eta=1)
     rds2 = produce_rds_etas(eta=2)
-    rds3 = produce_rds_etas(eta=3)
+    rds3 = produce_rds_etas(eta=3, cpt_source=cpt_source)
     rds4 = produce_rds_etas(eta=4)
     rds = xr.concat([x['r2'] for x in [rds1, rds2, rds3, rds4]], 'eta')
     rds['eta'] = range(1, 5)
@@ -317,7 +318,7 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, save=True):
     return fg
 
 
-def produce_rds_etas(eta=1):
+def produce_rds_etas(eta=1, cpt_source='randel'):
     """ run produce_MLR_2D_for_figs_6_and_7 with regressors:
         eta=1 : co2, anom_nino3p4, qbo_lagged
         eta=2 : co2, anom_nino3p4, qbo_lagged, T500, BDC
@@ -333,9 +334,13 @@ def produce_rds_etas(eta=1):
         print('producing eta {} with {}'.format(eta, pred))
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
     elif eta == 3:
-        pred = pred + ['radio_cold_no_qbo']
+        if cpt_source == 'randel':
+            pred = pred + ['radio_cold_no_qbo']
+            rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['radio_cold_no_qbo', 6])
+        elif cpt_source == 'sean':
+            pred = pred + ['cpt_ERA5']
+            rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['cpt_ERA5', 6])
         print('producing eta {} with {}'.format(eta, pred))
-        rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['radio_cold_no_qbo', 6])
     elif eta == 4:
         print('producing eta {} with {} and enso^2'.format(eta, pred))
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=True)
@@ -346,7 +351,8 @@ def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'anom_nino3p4'],
                                     lag={'qbo_cdas': 5}, add_enso2=True,
                                     reg_shift=None):
     from sklearn.linear_model import LinearRegression
-    X = produce_X(lag=lag, regressors=predictors, add_co2=True, reg_shift=reg_shift)
+    X = produce_X(lag=lag, regressors=predictors, add_co2=True,
+                  reg_shift=reg_shift, standertize=False)
     if add_enso2:
         X = add_enso2_and_enso_qbo_to_X(X)
     X = X.sel(time=slice('2005', '2019'))
