@@ -335,10 +335,10 @@ def produce_rds_etas(eta=1, cpt_source='randel'):
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
     elif eta == 3:
         if cpt_source == 'randel':
-            pred = pred + ['radio_cold_no_qbo']
+            pred = ['radio_cold_no_qbo']
             rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['radio_cold_no_qbo', 6])
         elif cpt_source == 'sean':
-            pred = pred + ['cpt_ERA5']
+            pred = ['cpt_ERA5']
             rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['cpt_ERA5', 6])
         print('producing eta {} with {}'.format(eta, pred))
     elif eta == 4:
@@ -351,6 +351,8 @@ def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'anom_nino3p4'],
                                     lag={'qbo_cdas': 5}, add_enso2=True,
                                     reg_shift=None):
     from sklearn.linear_model import LinearRegression
+    if [x for x in lag.keys()][0] not in predictors:
+        lag = None
     X = produce_X(lag=lag, regressors=predictors, add_co2=True,
                   reg_shift=reg_shift, standertize=False)
     if add_enso2:
