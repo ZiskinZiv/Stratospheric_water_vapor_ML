@@ -337,6 +337,22 @@ def _produce_cpt_swoosh(load_path=work_chaim, savepath=None):
     return cpt
 
 
+def _produce_cpt_sean_ERA5(load_path=work_chaim/'Sean - tropopause', savepath=None):
+    import xarray as xr
+    import pandas as pd
+    from aux_functions_strat import lat_mean
+    from aux_functions_strat import anomalize_xr
+    cpt = xr.load_dataset(load_path/'era5.tp.monmean.zm.nc')['ctpt']
+    cpt = cpt.sel(lat=slice(15, -15))
+    # attrs = cpt.attrs
+    cpt = lat_mean(cpt)
+    cpt.attrs['data from'] = 'ERA5'
+    cpt['time'] = pd.to_datetime(cpt['time'].values).to_period('M').to_timestamp()
+    cpt = anomalize_xr(cpt, freq='MS')
+    if savepath is not None:
+        cpt.to_netcdf(savepath / 'cpt_ERA5_index.nc')
+    return cpt
+
 #def _produce_cold_point(savepath=None, lonslice=None):
 #    import xarray as xr
 #    import sys
