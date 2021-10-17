@@ -142,7 +142,7 @@ def remove_regressors_and_set_title(ax, set_title_only=None):
                     'qbo_cdas*LN': r'(c) La-nina $\times$ QBO',
                     '1': r'(a) $\eta_1$ = QBO + ENSO + CO$_2$',
                     '2': r'(b) $\eta_1$ + T500 + BDC',
-                    '3': r'(c) $\eta_1$ + $\sum^5_{i=0}$CPT(t-$i$)',
+                    '3': r'(c) $\sum^5_{i=0}$CPT(t-$i$)',
                     '4': r'(d) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$'}
     title = ax.get_title()
     title = title.split('=')[-1].strip(' ')
