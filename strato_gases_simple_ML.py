@@ -20,6 +20,20 @@ from strat_paths import work_chaim
 ml_path = work_chaim / 'ML'
 
 
+def split_qbo_en_ln_neut_enso(qbo):
+    from make_regressors import load_all_regressors
+    ln = load_all_regressors()['LN'].dropna('time')
+    en = load_all_regressors()['EN'].dropna('time')
+    neut = load_all_regressors()['neutENSO'].dropna('time')
+    qbo_en = qbo.where(en>=0.5).fillna(0)
+    qbo_en.name = 'qbo_en'
+    qbo_ln = qbo.where(ln<=-0.5).fillna(0)
+    qbo_ln.name = 'qbo_ln'
+    qbo_neut = qbo.where(neut!=0).fillna(0)
+    qbo_neut.name = 'qbo_neut'
+    return qbo_en, qbo_ln, qbo_neut
+
+
 # def CV_splitter_for_xarray_time_series(X_da, time_dim='time', grp='year'):
 #     groups = X_da.groupby('{}.{}'.format(time_dim, grp)).groups
 #     sorted_groups = [value for (key, value) in sorted(groups.items())]
