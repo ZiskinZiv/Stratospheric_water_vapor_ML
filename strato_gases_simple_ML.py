@@ -44,7 +44,7 @@ def ABS_SHAP(df_shap, df):
     import numpy as np
     import pandas as pd
     import seaborn as sns
-    sns.set_theme(style='ticks', font_scale=1.2)
+    sns.set_theme(style='ticks', font_scale=1.5)
     #import matplotlib as plt
     # Make a copy of the input data
     shap_v = pd.DataFrame(df_shap)
@@ -71,19 +71,21 @@ def ABS_SHAP(df_shap, df):
     k2 = k2.sort_values(by='SHAP_abs', ascending=True)
     colorlist = k2['Sign']
     ax = k2.plot.barh(x='Predictor', y='SHAP_abs',
-                      color=colorlist, figsize=(5, 6), legend=False)
+                      color=colorlist, figsize=(9, 3), legend=False)
     ax.set_xlabel("SHAP Value (Red = Positive Impact)")
     return
 
 
 def plot_simplified_shap_tree_explainer(rf_model):
     import shap
+    from sklearn.model_selection import train_test_split
     X = produce_X(lag={'qbo_cdas': 5})
-    y = produce_y(detrend=None)
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
     X = X.sel(time=slice('1994', '2019'))
     y = y.sel(time=slice('1994', '2019'))
-    rf_model.fit(X, y)
-    dfX = X.to_dataset('regressor').to_dataframe()
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
+    rf_model.fit(X_train, y_train)
+    dfX = X_test.to_dataset('regressor').to_dataframe()
     dfX = dfX.rename(
         {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO', 'co2': r'CO$_2$'}, axis=1)
     ex_rf = shap.Explainer(rf_model)
@@ -94,12 +96,14 @@ def plot_simplified_shap_tree_explainer(rf_model):
 
 def plot_Tree_explainer_shap(rf_model):
     import shap
+    from sklearn.model_selection import train_test_split
     X = produce_X(lag={'qbo_cdas': 5})
-    y = produce_y(detrend=None)
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
     X = X.sel(time=slice('1994', '2019'))
     y = y.sel(time=slice('1994', '2019'))
-    rf_model.fit(X, y)
-    dfX = X.to_dataset('regressor').to_dataframe()
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
+    rf_model.fit(X_train, y_train)
+    dfX = X_test.to_dataset('regressor').to_dataframe()
     dfX = dfX.rename(
         {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO', 'co2': r'CO$_2$'}, axis=1)
     fi = dict(zip(dfX.columns, rf_model.feature_importances_ * 100))
@@ -117,7 +121,7 @@ def plot_model_prediction_fig_3():
     import matplotlib.pyplot as plt
     X = produce_X()
     X = add_enso2_and_enso_qbo_to_X(X)
-    y = produce_y(detrend=None)
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
     X_test = X.sel(time=slice('1994', '2019'))
     y_test = y.sel(time=slice('1994', '2019'))
     X_train = X.sel(time=slice('2005', '2019'))
@@ -249,8 +253,8 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
     sns.set_theme(style='ticks', font_scale=1.5)
     titles =[r'(a) $\sum_{i=0}^{5}$CPT(t-$i$)',
              r'(b) $\eta_1$ = QBO + ENSO + CO$_2$',
-             r'(c) $\eta_1$ + T500 + BDC',
-             r'(d) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$']
+             r'(c) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$',
+             r'(d) $\eta_1$ + T500 + BDC']
     # rds1 = xr.open_dataset(
     #             path /
     #             'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
@@ -265,8 +269,8 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
     #     'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc')
     rds1 = produce_rds_etas(eta=3, cpt_source=cpt_source)
     rds2 = produce_rds_etas(eta=1)
-    rds3 = produce_rds_etas(eta=2)
-    rds4 = produce_rds_etas(eta=4)
+    rds3 = produce_rds_etas(eta=4)
+    rds4 = produce_rds_etas(eta=2)
     rds = xr.concat([x['r2'] for x in [rds1, rds2, rds3, rds4]], 'eta')
     rds['eta'] = range(1, 5)
     rds = rds.sortby('eta')
@@ -509,7 +513,7 @@ def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
                                                        cv='kfold'):
     import xarray as xr
     X = produce_X()
-    y = produce_y()
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
     X = X.sel(time=slice('1994', '2019'))
     y = y.sel(time=slice('1994', '2019'))
     ml = ML_Classifier_Switcher()
@@ -688,7 +692,7 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     if add_MLR2:
         X = add_enso2_and_enso_qbo_to_X(X)
         print('adding ENSO^2 and ENSO*QBO')
-    y = produce_y()
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
     X = X.sel(time=slice('1994', '2019'))
     y = y.sel(time=slice('1994', '2019'))
     groups = X['time'].dt.year
@@ -800,7 +804,7 @@ def produce_y(path=work_chaim, detrend='lowess',
     if plevel is not None:
         da = da.sel(level=plevel, method='nearest')
     if lat_band_mean is not None:
-        da = lat_mean(da)
+        da = lat_mean(da.sel(lat=slice(lat_band_mean[0], lat_band_mean[1])))
     if detrend is not None:
         if detrend == 'lowess':
             da = detrend_ts(da)
@@ -837,6 +841,19 @@ def r2_adj_score(y_true, y_pred, **kwargs):
     r2_adj = 1.0 - (1.0 - r2) * (n - 1.0) / (n - p)
     # r2_adj = 1-(1-r2)*(n-1)/(n-p-1)
     return r2_adj
+
+
+def Optimize_HP_per_model(test_size=0.1, model_name='SVM',
+                          n_splits=5, savepath=None):
+    from sklearn.model_selection import train_test_split
+    X = produce_X()
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
+    X = X.sel(time=slice('1994', '2019'))
+    y = y.sel(time=slice('1994', '2019'))
+    X_val, X_test, y_val, y_test = train_test_split(X, y, test_size=test_size)
+    gr = single_cross_validation(X_val, y_val, model_name=model_name, n_splits=n_splits,
+                                 savepath=savepath)
+    return gr
 
 
 def single_cross_validation(X_val, y_val, model_name='SVM',
@@ -1056,11 +1073,11 @@ class ML_Classifier_Switcher(object):
                                'n_estimators': [100, 300, 700, 1200]
                                }
         elif self.pgrid == 'dense':
-            self.param_grid = {'max_depth': [5, 10, 25, 50, 100, 150, 250],
+            self.param_grid = {'max_depth': [5, 10, 25, 50],
                                'max_features': ['auto', 'sqrt'],
-                               'min_samples_leaf': [1, 2, 5, 10, 15, 25],
-                               'min_samples_split': [2, 5, 15, 30, 50, 70, 100],
-                               'n_estimators': [100, 200, 300, 500, 700, 1000, 1300, 1500]
+                               'min_samples_leaf': [1, 2, 5, 10],
+                               'min_samples_split': [2, 5, 15, 30],
+                               'n_estimators': [100, 200, 300, 500]
                                }
         return RandomForestRegressor(random_state=42, n_jobs=-1)
 
