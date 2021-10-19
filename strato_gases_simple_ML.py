@@ -247,7 +247,10 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
 
     error_cmap = seqbr.YlGnBu_9.mpl_colormap
     sns.set_theme(style='ticks', font_scale=1.5)
-
+    titles =[r'(a) $\sum_{i=0}^{5}$CPT(t-$i$)',
+             r'(b) $\eta_1$ = QBO + ENSO + CO$_2$',
+             r'(c) $\eta_1$ + T500 + BDC',
+             r'(d) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$']
     # rds1 = xr.open_dataset(
     #             path /
     #             'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
@@ -260,9 +263,9 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
     # rds4 = xr.open_dataset(
     #     path /
     #     'MLR_H2O_latlon_cdas-plags_ch4_enso_poly_2_no_qbo^2_no_ch4_extra_2004-2019.nc')
-    rds1 = produce_rds_etas(eta=1)
-    rds2 = produce_rds_etas(eta=2)
-    rds3 = produce_rds_etas(eta=3, cpt_source=cpt_source)
+    rds1 = produce_rds_etas(eta=3, cpt_source=cpt_source)
+    rds2 = produce_rds_etas(eta=1)
+    rds3 = produce_rds_etas(eta=2)
     rds4 = produce_rds_etas(eta=4)
     rds = xr.concat([x['r2'] for x in [rds1, rds2, rds3, rds4]], 'eta')
     rds['eta'] = range(1, 5)
@@ -292,7 +295,7 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
     cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .025])  # last num controls width
     fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
     gl_list = []
-    for ax in fg.axes.flatten():
+    for i, ax in enumerate(fg.axes.flatten()):
         ax.coastlines()
         gl = ax.gridlines(
             crs=ccrs.PlateCarree(),
@@ -310,7 +313,12 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
         gl.xformatter = LONGITUDE_FORMATTER
         gl.yformatter = LATITUDE_FORMATTER
         gl_list.append(gl)
-        ax = remove_regressors_and_set_title(ax)
+        if i == 0:
+            plt.rcParams['axes.titlepad'] = 16
+        else:
+            plt.rcParams['axes.titlepad'] = 6
+        ax.set_title(titles[i])
+        # ax = remove_regressors_and_set_title(ax)
     # gl_list[0].ylabels_right = False
     # gl_list[2].ylabels_left = False
 #    try:
@@ -318,12 +326,12 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
 #    except IndexError:
 #        pass
     fg.fig.tight_layout()
-    fg.fig.subplots_adjust(top=0.99,
+    fg.fig.subplots_adjust(top=0.92,
                            bottom=0.16,
                            left=0.065,
                            right=0.935,
                            hspace=0.0,
-                           wspace=0.288)
+                           wspace=0.208)
     print('Caption: ')
     print('The adjusted R^2 for the water vapor anomalies MLR analysis in the 82 hPa level with CH4 ,ENSO, and pressure level lag varied QBO as predictors. This MLR spans from 2004 to 2018')
     filename = 'MLR_H2O_r2_map_82_eta_with_co2.png'
