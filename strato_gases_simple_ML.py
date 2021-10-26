@@ -512,10 +512,8 @@ def add_enso2_and_enso_qbo_to_X(X):
 def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
                                                        cv='kfold'):
     import xarray as xr
-    X = produce_X()
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
-    X = X.sel(time=slice('1994', '2019'))
-    y = y.sel(time=slice('1994', '2019'))
+    X = produce_X(syear='1994', eyear='2019')
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     ml = ML_Classifier_Switcher()
     das = []
     for model_name in ['RF', 'SVM', 'MLP', 'MLR']:
@@ -688,13 +686,11 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     logo = LeaveOneGroupOut()
     gss = GroupShuffleSplit(n_splits=20, test_size=0.1, random_state=1)
     from sklearn.metrics import make_scorer
-    X = produce_X()
+    X = produce_X(syear='1994', eyear='2019')
     if add_MLR2:
         X = add_enso2_and_enso_qbo_to_X(X)
         print('adding ENSO^2 and ENSO*QBO')
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
-    X = X.sel(time=slice('1994', '2019'))
-    y = y.sel(time=slice('1994', '2019'))
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     groups = X['time'].dt.year
     scores_dict = {s: s for s in scorers}
     if 'r2_adj' in scorers:
@@ -735,10 +731,8 @@ def manual_cross_validation_for_RF_feature_importances(rf_model, n_splits=5, n_r
     if 'r2_adj' in scorers:
         scores_dict['r2_adj'] = make_scorer(r2_adj_score)
     print(rf_model)
-    X = produce_X()
-    y = produce_y()
-    X = X.sel(time=slice('1994', '2019'))
-    y = y.sel(time=slice('1994', '2019'))
+    X = produce_X(syear='1994', eyear='2019')
+    y = produce_y(syear='1994', eyear='2019')
     # cv = TimeSeriesSplit(5)
     # cv = KFold(10, shuffle=True, random_state=1)
     cv = RepeatedKFold(n_splits=n_splits, n_repeats=n_repeats,
@@ -767,8 +761,8 @@ def get_HP_params_from_optimized_model(path=ml_path, model='SVM'):
 
 
 def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
-              lag={'qbo_cdas': 5}, add_co2=True, standertize=True,
-              reg_shift=None):
+              lag={'qbo_cdas': 5}, add_co2=True, standertize=False,
+              reg_shift=None, syear=None, eyear=None):
     """reg_shift is dict = {regressor: n} where n is the number of times to
     shift backwards one month"""
     from make_regressors import load_all_regressors
@@ -787,6 +781,12 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
     if reg_shift is not None:
         dss = regressor_shift(ds[reg_shift[0]].dropna('time'), shifts=[1,reg_shift[-1]])
         ds = xr.merge([ds, dss])
+    if syear is not None:
+        ds = ds.sel(time=slice(syear, None))
+    if eyear is not None:
+        ds = ds.sel(time=slice(None, eyear))
+    if syear is not None or eyear is not None and add_co2:
+        ds['co2'] = (ds['co2'] - ds['co2'].mean('time')) / ds['co2'].std('time')
     X = ds.dropna('time').to_array('regressor')
     X = X.transpose('time', 'regressor')
     return X
@@ -794,7 +794,8 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
 
 def produce_y(path=work_chaim, detrend='lowess',
               sw_var='combinedeqfillanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
-              lat_band_mean=[-5, 5], plevel=82, deseason='mean', standertize=True):
+              lat_band_mean=[-5, 5], plevel=82, deseason='mean', standertize=True,
+              syear=None, eyear=None):
     import xarray as xr
     from aux_functions_strat import lat_mean
     from aux_functions_strat import detrend_ts
@@ -812,6 +813,10 @@ def produce_y(path=work_chaim, detrend='lowess',
         da = anomalize_xr(da, freq='MS', units=deseason, time_dim='time')
     if standertize is not None:
         da = (da - da.mean('time')) / da.std('time')
+    if syear is not None:
+        da = da.sel(time=slice(syear, None))
+    if eyear is not None:
+        da = da.sel(time=slice(None, eyear))
     y = da
     return y
 
@@ -843,15 +848,18 @@ def r2_adj_score(y_true, y_pred, **kwargs):
     return r2_adj
 
 
-def Optimize_HP_per_model(test_size=0.1, model_name='SVM',
+def Optimize_HP_per_model(test_size=0.2, model_name='SVM',
                           n_splits=5, savepath=None):
     from sklearn.model_selection import train_test_split
-    X = produce_X()
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
-    X = X.sel(time=slice('1994', '2019'))
-    y = y.sel(time=slice('1994', '2019'))
-    X_val, X_test, y_val, y_test = train_test_split(X, y, test_size=test_size)
-    gr = single_cross_validation(X_val, y_val, model_name=model_name, n_splits=n_splits,
+    X = produce_X(syear='1994', eyear='2019')
+    y = produce_y(detrend=None, lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    if test_size is None:
+        X_val = X
+        y_val = y
+    else:
+        X_val, X_test, y_val, y_test = train_test_split(X, y, test_size=test_size)
+    gr = single_cross_validation(X_val, y_val, model_name=model_name,
+                                 n_splits=n_splits,
                                  savepath=savepath)
     return gr
 
@@ -1055,8 +1063,8 @@ class ML_Classifier_Switcher(object):
             self.param_grid = {'alpha': np.logspace(-5, 1, 7),
                                'activation': ['identity', 'logistic', 'tanh', 'relu'],
                                'hidden_layer_sizes': [(10, 10, 10), (10, 20, 10), (10,), (5,), (1,)],
-                               'learning_rate': ['constant', 'adaptive'],
-                               'solver': ['adam', 'lbfgs', 'sgd']}
+                               'learning_rate': ['constant'],
+                               'solver': ['adam', 'sgd']}
             #(1,),(2,),(3,),(4,),(5,),(6,),(7,),(8,),(9,),(10,),(11,), (12,),(13,),(14,),(15,),(16,),(17,),(18,),(19,),(20,),(21,)
         return MLPRegressor(random_state=42, max_iter=500, learning_rate_init=0.1)
 
@@ -1073,11 +1081,11 @@ class ML_Classifier_Switcher(object):
                                'n_estimators': [100, 300, 700, 1200]
                                }
         elif self.pgrid == 'dense':
-            self.param_grid = {'max_depth': [5, 10, 25, 50],
+            self.param_grid = {'max_depth': [2, 5, 7],
                                'max_features': ['auto', 'sqrt'],
-                               'min_samples_leaf': [1, 2, 5, 10],
-                               'min_samples_split': [2, 5, 15, 30],
-                               'n_estimators': [100, 200, 300, 500]
+                               'min_samples_leaf': [1, 2],
+                               'min_samples_split': [2, 5],
+                               'n_estimators': [5, 20, 50,]
                                }
         return RandomForestRegressor(random_state=42, n_jobs=-1)
 
