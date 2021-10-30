@@ -686,11 +686,11 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     logo = LeaveOneGroupOut()
     gss = GroupShuffleSplit(n_splits=20, test_size=0.1, random_state=1)
     from sklearn.metrics import make_scorer
-    X = produce_X(syear='1994', eyear='2019')
+    X = produce_X(syear='1994', eyear='2019', add_co2=False)
     if add_MLR2:
         X = add_enso2_and_enso_qbo_to_X(X)
         print('adding ENSO^2 and ENSO*QBO')
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     groups = X['time'].dt.year
     scores_dict = {s: s for s in scorers}
     if 'r2_adj' in scorers:
@@ -785,14 +785,14 @@ def produce_X(regressors=['qbo_cdas', 'anom_nino3p4'],
         ds = ds.sel(time=slice(syear, None))
     if eyear is not None:
         ds = ds.sel(time=slice(None, eyear))
-    if syear is not None or eyear is not None and add_co2:
+    if ((syear is not None) or (eyear is not None)) and add_co2:
         ds['co2'] = (ds['co2'] - ds['co2'].mean('time')) / ds['co2'].std('time')
     X = ds.dropna('time').to_array('regressor')
     X = X.transpose('time', 'regressor')
     return X
 
 
-def produce_y(path=work_chaim, detrend='lowess',
+def produce_y(path=work_chaim, detrend=None,
               sw_var='combinedeqfillanomfillh2oq', filename='swoosh_latpress-2.5deg.nc',
               lat_band_mean=[-5, 5], plevel=82, deseason='mean', standertize=True,
               syear=None, eyear=None):
@@ -808,14 +808,19 @@ def produce_y(path=work_chaim, detrend='lowess',
         da = lat_mean(da.sel(lat=slice(lat_band_mean[0], lat_band_mean[1])))
     if detrend is not None:
         if detrend == 'lowess':
+            print('lowess detrend for h2o')
             da = detrend_ts(da)
     if deseason is not None:
+        print('deseasonlizing h2o...')
         da = anomalize_xr(da, freq='MS', units=deseason, time_dim='time')
     if standertize is not None:
+        print('standertzing h2o')
         da = (da - da.mean('time')) / da.std('time')
     if syear is not None:
+        print('picking {} as start year'.format(syear))
         da = da.sel(time=slice(syear, None))
     if eyear is not None:
+        print('picking {} as end year'.format(eyear))
         da = da.sel(time=slice(None, eyear))
     y = da
     return y
@@ -848,11 +853,11 @@ def r2_adj_score(y_true, y_pred, **kwargs):
     return r2_adj
 
 
-def Optimize_HP_per_model(test_size=0.2, model_name='SVM',
+def Optimize_HP_per_model(test_size=0.1, model_name='SVM',
                           n_splits=5, savepath=None):
     from sklearn.model_selection import train_test_split
-    X = produce_X(syear='1994', eyear='2019')
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    X = produce_X(syear='1994', eyear='2019', add_co2=False)
+    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     if test_size is None:
         X_val = X
         y_val = y
@@ -1081,11 +1086,11 @@ class ML_Classifier_Switcher(object):
                                'n_estimators': [100, 300, 700, 1200]
                                }
         elif self.pgrid == 'dense':
-            self.param_grid = {'max_depth': [2, 5, 7],
+            self.param_grid = {'max_depth': [2, 5],
                                'max_features': ['auto', 'sqrt'],
                                'min_samples_leaf': [1, 2],
                                'min_samples_split': [2, 5],
-                               'n_estimators': [5, 20, 50,]
+                               'n_estimators': [5, 20, 50]
                                }
         return RandomForestRegressor(random_state=42, n_jobs=-1)
 
