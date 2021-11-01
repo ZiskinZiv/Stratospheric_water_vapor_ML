@@ -79,18 +79,21 @@ def ABS_SHAP(df_shap, df):
 def plot_simplified_shap_tree_explainer(rf_model):
     import shap
     from sklearn.model_selection import train_test_split
-    X = produce_X(lag={'qbo_cdas': 5})
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
-    X = X.sel(time=slice('1994', '2019'))
-    y = y.sel(time=slice('1994', '2019'))
+    import matplotlib.pyplot as plt
+    X = produce_X(lag={'qbo_cdas': 5}, syear='1994',
+                  eyear='2019', add_co2=False)
+    y = produce_y(detrend='lowess',
+                  lat_band_mean=[-15, 15], syear='1994', eyear='2019', standertize=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
     rf_model.fit(X_train, y_train)
     dfX = X_test.to_dataset('regressor').to_dataframe()
     dfX = dfX.rename(
-        {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO', 'co2': r'CO$_2$'}, axis=1)
+        {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO'}, axis=1)
     ex_rf = shap.Explainer(rf_model)
     shap_values_rf = ex_rf.shap_values(dfX)
     ABS_SHAP(shap_values_rf, dfX)
+    ax = plt.gca()
+    ax.set_xlabel(r'H$_{2}$O anomalies (STD) (Red is positive)')
     return
 
 
@@ -512,8 +515,8 @@ def add_enso2_and_enso_qbo_to_X(X):
 def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
                                                        cv='kfold'):
     import xarray as xr
-    X = produce_X(syear='1994', eyear='2019')
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    X = produce_X(syear='1994', eyear='2019', add_co2=False)
+    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     ml = ML_Classifier_Switcher()
     das = []
     for model_name in ['RF', 'SVM', 'MLP', 'MLR']:
@@ -1086,11 +1089,11 @@ class ML_Classifier_Switcher(object):
                                'n_estimators': [100, 300, 700, 1200]
                                }
         elif self.pgrid == 'dense':
-            self.param_grid = {'max_depth': [2, 5],
+            self.param_grid = {'max_depth': [2, 5, 10],
                                'max_features': ['auto', 'sqrt'],
                                'min_samples_leaf': [1, 2],
                                'min_samples_split': [2, 5],
-                               'n_estimators': [5, 20, 50]
+                               'n_estimators': [50, 100, 400]
                                }
         return RandomForestRegressor(random_state=42, n_jobs=-1)
 
