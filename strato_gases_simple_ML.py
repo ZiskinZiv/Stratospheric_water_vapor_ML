@@ -122,9 +122,9 @@ def plot_model_prediction_fig_3():
     from sklearn.linear_model import LinearRegression
     import seaborn as sns
     import matplotlib.pyplot as plt
-    X = produce_X()
+    X = produce_X(syear='1994', eyear='2019',add_co2=False)
     X = add_enso2_and_enso_qbo_to_X(X)
-    y = produce_y(detrend=None, lat_band_mean=[-15, 15])
+    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     X_test = X.sel(time=slice('1994', '2019'))
     y_test = y.sel(time=slice('1994', '2019'))
     X_train = X.sel(time=slice('2005', '2019'))
@@ -382,15 +382,16 @@ def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'anom_nino3p4'],
     from sklearn.linear_model import LinearRegression
     if [x for x in lag.keys()][0] not in predictors:
         lag = None
-    X = produce_X(lag=lag, regressors=predictors, add_co2=True,
-                  reg_shift=reg_shift, standertize=False)
+    X = produce_X(lag=lag, regressors=predictors, add_co2=False,
+                  reg_shift=reg_shift, standertize=False, syear='2005', eyear='2019')
     if add_enso2:
         X = add_enso2_and_enso_qbo_to_X(X)
-    X = X.sel(time=slice('2005', '2019'))
-    y = produce_y(detrend=None, lat_band_mean=None, plevel=82, deseason='std',
-                  filename='swoosh_lonlatpress-20deg-5deg.nc', sw_var='combinedanomh2oq')
+    # X = X.sel(time=slice('2005', '2019'))
+    y = produce_y(detrend='lowess', lat_band_mean=None, plevel=82, deseason='std',
+                  filename='swoosh_lonlatpress-20deg-5deg.nc', sw_var='combinedanomh2oq',
+                  syear='2005', eyear='2019')
     y = y.sel(lat=slice(-60, 60))
-    y = y.sel(time=X.time)
+    # y = y.sel(time=X.time)
     lr = LinearRegression()
     rds = make_results_for_MLR(lr, X, y)
     return rds
@@ -806,13 +807,12 @@ def produce_y(path=work_chaim, detrend=None,
     file = path / filename
     da = xr.open_dataset(file)[sw_var]
     if plevel is not None:
-        da = da.sel(level=plevel, method='nearest')
+        da = da.sel(level=plevel, method='nearest').reset_coords(drop=True)
     if lat_band_mean is not None:
         da = lat_mean(da.sel(lat=slice(lat_band_mean[0], lat_band_mean[1])))
     if detrend is not None:
-        if detrend == 'lowess':
-            print('lowess detrend for h2o')
-            da = detrend_ts(da)
+        if detrend is not None:
+            da = detrend_ts(da, kind=detrend, verbose=1)
     if deseason is not None:
         print('deseasonlizing h2o...')
         da = anomalize_xr(da, freq='MS', units=deseason, time_dim='time')
