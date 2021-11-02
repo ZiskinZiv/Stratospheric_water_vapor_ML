@@ -955,11 +955,57 @@ def desc_nan(data, verbose=True):
     return non_nans
 
 
-def detrend_ts(da_ts):
-    trend = loess_curve(da_ts, plot=False)
+def detrend_ts(da_ts, time_dim='time', kind='lowess',
+               verbose=0):
+    if verbose > 0:
+        print('using {} method for detrending.'.format(kind))
+    if len(da_ts.dims) == 2:
+        other_dim = [x for x in da_ts.dims if time_dim not in x][0]
+        if verbose > 0:
+            print('found {} dim.'.format(other_dim))
+        if kind == 'lowess':
+            trend = da_ts.groupby(other_dim).apply(loess_curve, plot=False)
+        elif kind == 'lr':
+            trend = da_ts.groupby(other_dim).apply(find_mean_trend_LR, plot=False)
+    elif len(da_ts.dims) == 3:
+        other_dims = [x for x in da_ts.dims if time_dim not in x]
+        if verbose > 0:
+            print('found {} dims.'.format(other_dims))
+        da_stacked = da_ts.stack(geo=other_dims)
+        if kind == 'lowess':
+            trend = da_stacked.groupby('geo').apply(loess_curve, plot=False)
+        elif kind == 'lr':
+            trend = da_stacked.groupby('geo').apply(find_mean_trend_LR, plot=False)
+        trend = trend.unstack('geo')
+    else:
+        if kind == 'lowess':
+            trend = loess_curve(da_ts, plot=False)
+        elif kind == 'lr':
+            trend = find_mean_trend_LR(da_ts, time_dim=time_dim)
     detrended = da_ts - trend['mean']
     detrended.name = da_ts.name
     return detrended
+
+
+def find_mean_trend_LR(da_ts, time_dim='time', plot=False):
+    from sklearn.linear_model import LinearRegression
+    import matplotlib.pyplot as plt
+    import xarray as xr
+    import numpy as np
+    if da_ts.dropna(time_dim)[time_dim].size == 0:
+        da_lr = da_ts.fillna(0).to_dataset(name='mean')
+        return da_lr
+    x_time = da_ts.dropna(time_dim)[time_dim].values
+    x = np.array([i for i in range(0, len(x_time))]).reshape(-1, 1)
+    # x = np.array(x).reshape(-1, 1)
+    y = da_ts.dropna(time_dim).values
+    lr = LinearRegression()
+    lr.fit(x, y)
+    trend = lr.predict(x)
+    da_lr = xr.Dataset()
+    da_lr['mean'] = xr.DataArray(trend, dims=[time_dim])
+    da_lr[time_dim] = x_time
+    return da_lr
 
 
 def loess_curve(da_ts, time_dim='time', season=None, plot=True):
@@ -969,6 +1015,9 @@ def loess_curve(da_ts, time_dim='time', season=None, plot=True):
     import numpy as np
     if season is not None:
         da_ts = da_ts.sel({time_dim: da_ts[time_dim + '.season'] == season})
+    if da_ts.dropna(time_dim)[time_dim].size == 0:
+        da_lowess = da_ts.fillna(0).to_dataset(name='mean')
+        return da_lowess
     x = da_ts.dropna(time_dim)[time_dim].values
     y = da_ts.dropna(time_dim).values
     l_obj = loess(x, y)
