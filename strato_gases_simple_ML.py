@@ -82,7 +82,7 @@ def plot_simplified_shap_tree_explainer(rf_model):
     import matplotlib.pyplot as plt
     X = produce_X(lag={'qbo_cdas': 5}, syear='1994',
                   eyear='2019', add_co2=False)
-    y = produce_y(detrend='lowess',
+    y = produce_y(detrend='lr',
                   lat_band_mean=[-15, 15], syear='1994', eyear='2019', standertize=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
     rf_model.fit(X_train, y_train)
@@ -124,7 +124,7 @@ def plot_model_prediction_fig_3():
     import matplotlib.pyplot as plt
     X = produce_X(syear='1994', eyear='2019',add_co2=False)
     X = add_enso2_and_enso_qbo_to_X(X)
-    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     X_test = X.sel(time=slice('1994', '2019'))
     y_test = y.sel(time=slice('1994', '2019'))
     X_train = X.sel(time=slice('2005', '2019'))
@@ -164,12 +164,21 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
     from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
     from palettable.scientific import diverging as divsci
     from strato_figures import remove_regressors_and_set_title
+    # titles =[r'(a) QBO',
+    #      r'(b) ENSO',
+    #      r'(c) QBO $\times$ ENSO',
+    #      r'(d) ENSO$^2$']
+    titles =[r'(a) QBO',
+      r'(b) La-nina',
+      r'(c) El-nino',
+      r'(d) neutENSO']
+
     predict_cmap = divsci.Vik_20.mpl_colormap
     sns.set_theme(style='ticks', font_scale=1.5)
     proj = ccrs.PlateCarree(central_longitude=0)
     plt_kwargs = dict(add_colorbar=False,
                       col_wrap=col_wrap,
-                      cmap=predict_cmap, center=0.0, extend='max', vmax=0.6,
+                      cmap=predict_cmap, center=0.0, extend=None, vmax=None,
                       levels=41, subplot_kws=dict(projection=proj),
                       transform=ccrs.PlateCarree(), figsize=figsize)
 
@@ -182,7 +191,7 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
     cbar_kws = {'label': '', 'format': '%0.2f'}
     cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])  # last num controls width
     fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
-    for ax in fg.axes.flatten():
+    for i, ax in enumerate(fg.axes.flatten()):
         ax.coastlines()
         ax.set_extent(extent, crs=ccrs.PlateCarree())
         gl = ax.gridlines(
@@ -201,7 +210,8 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
         gl.xformatter = LONGITUDE_FORMATTER
         gl.yformatter = LATITUDE_FORMATTER
         gl_list.append(gl)
-        ax = remove_regressors_and_set_title(ax)
+        # ax = remove_regressors_and_set_title(ax)
+        ax.set_title(titles[i])
     gl_list[0].ylabels_right = False
     gl_list[1].ylabels_right = False
     gl_list[1].ylabels_left = True
@@ -254,10 +264,14 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
 
     error_cmap = seqbr.YlGnBu_9.mpl_colormap
     sns.set_theme(style='ticks', font_scale=1.5)
+    # titles =[r'(a) $\sum_{i=0}^{5}$CPT(t-$i$)',
+    #          r'(b) $\eta_1$ = QBO + ENSO',
+    #          r'(c) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$',
+    #          r'(d) $\eta_1$ + T500 + BDC']
     titles =[r'(a) $\sum_{i=0}^{5}$CPT(t-$i$)',
-             r'(b) $\eta_1$ = QBO + ENSO + CO$_2$',
-             r'(c) $\eta_1$ + QBO $\times$ ENSO + ENSO$^2$',
-             r'(d) $\eta_1$ + T500 + BDC']
+         r'(b) QBO+ENSO',
+         r'(c) QBO+ENSO+QBO$\times$ENSO+ENSO$^2$',
+         r'(d) QBO+ENSO+T500+BDC']
     # rds1 = xr.open_dataset(
     #             path /
     #             'MLR_H2O_latlon_cdas-plags_ch4_enso_2004-2019.nc')
@@ -341,7 +355,7 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
                            wspace=0.208)
     print('Caption: ')
     print('The adjusted R^2 for the water vapor anomalies MLR analysis in the 82 hPa level with CH4 ,ENSO, and pressure level lag varied QBO as predictors. This MLR spans from 2004 to 2018')
-    filename = 'MLR_H2O_r2_map_82_eta_with_co2.png'
+    filename = 'MLR_H2O_r2_map_82_eta_detrended.png'
     if save:
         plt.savefig(savefig_path / filename, bbox_inches='tight')
     return fg
@@ -387,7 +401,7 @@ def produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas', 'anom_nino3p4'],
     if add_enso2:
         X = add_enso2_and_enso_qbo_to_X(X)
     # X = X.sel(time=slice('2005', '2019'))
-    y = produce_y(detrend='lowess', lat_band_mean=None, plevel=82, deseason='std',
+    y = produce_y(detrend='lr', lat_band_mean=None, plevel=82, deseason='std',
                   filename='swoosh_lonlatpress-20deg-5deg.nc', sw_var='combinedanomh2oq',
                   syear='2005', eyear='2019')
     y = y.sel(lat=slice(-60, 60))
@@ -517,7 +531,7 @@ def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
                                                        cv='kfold'):
     import xarray as xr
     X = produce_X(syear='1994', eyear='2019', add_co2=False)
-    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     ml = ML_Classifier_Switcher()
     das = []
     for model_name in ['RF', 'SVM', 'MLP', 'MLR']:
@@ -694,7 +708,7 @@ def cross_validate_using_optimized_HP(path=ml_path, model='SVM', n_splits=5,
     if add_MLR2:
         X = add_enso2_and_enso_qbo_to_X(X)
         print('adding ENSO^2 and ENSO*QBO')
-    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     groups = X['time'].dt.year
     scores_dict = {s: s for s in scorers}
     if 'r2_adj' in scorers:
@@ -860,7 +874,7 @@ def Optimize_HP_per_model(test_size=0.1, model_name='SVM',
                           n_splits=5, savepath=None):
     from sklearn.model_selection import train_test_split
     X = produce_X(syear='1994', eyear='2019', add_co2=False)
-    y = produce_y(detrend='lowess', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     if test_size is None:
         X_val = X
         y_val = y
