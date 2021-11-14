@@ -535,7 +535,7 @@ def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
     ml = ML_Classifier_Switcher()
     das = []
     for model_name in ['RF', 'SVM', 'MLP', 'MLR']:
-        print('preforming LOO with yearly group for {}.'.format(model_name))
+        # print('preforming LOO with yearly group for {}.'.format(model_name))
         model = ml.pick_model(model_name)
         if model_name != 'MLR':
             model.set_params(**get_HP_params_from_optimized_model(path=path, model=model_name))
@@ -552,15 +552,28 @@ def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
 def cross_val_predict_da(estimator, X, y, cv='kfold'):
     from sklearn.model_selection import LeaveOneGroupOut
     from sklearn.model_selection import KFold
+    import xarray as xr
     from sklearn.model_selection import cross_val_predict
+    import numpy as np
     if cv == 'logo':
         logo = LeaveOneGroupOut()
         groups = X['time'].dt.year
         cvr = cross_val_predict(estimator, X, y, groups=groups, cv=logo)
+        da_ts = y.copy(data=cvr)
     elif cv == 'kfold':
         kfold = KFold(n_splits=5, shuffle=True, random_state=1)
         cvr = cross_val_predict(estimator, X, y, cv=kfold)
-    da_ts = y.copy(data=cvr)
+        da_ts = y.copy(data=cvr)
+    elif cv == 'rkfold':
+        das = []
+        for i in [x+1 for x in range(20)]:
+            kfold = KFold(n_splits=5, shuffle=True,
+                          random_state=i)
+            cvr = cross_val_predict(estimator, X, y, cv=kfold)
+            da_ts = y.copy(data=cvr)
+            das.append(da_ts)
+        da_ts = xr.concat(das, 'fold')
+        da_ts = da_ts.mean('fold')
     da_ts.attrs['estimator'] = estimator.__repr__().split('(')[0]
     da_ts.name = da_ts.name + '_' + da_ts.attrs['estimator']
     for key, value in estimator.get_params().items():
@@ -820,6 +833,12 @@ def produce_y(path=work_chaim, detrend=None,
     from aux_functions_strat import anomalize_xr
     file = path / filename
     da = xr.open_dataset(file)[sw_var]
+    if syear is not None:
+        print('picking {} as start year'.format(syear))
+        da = da.sel(time=slice(syear, None))
+    if eyear is not None:
+        print('picking {} as end year'.format(eyear))
+        da = da.sel(time=slice(None, eyear))
     if plevel is not None:
         da = da.sel(level=plevel, method='nearest').reset_coords(drop=True)
     if lat_band_mean is not None:
@@ -833,12 +852,6 @@ def produce_y(path=work_chaim, detrend=None,
     if standertize is not None:
         print('standertzing h2o')
         da = (da - da.mean('time')) / da.std('time')
-    if syear is not None:
-        print('picking {} as start year'.format(syear))
-        da = da.sel(time=slice(syear, None))
-    if eyear is not None:
-        print('picking {} as end year'.format(eyear))
-        da = da.sel(time=slice(None, eyear))
     y = da
     return y
 
