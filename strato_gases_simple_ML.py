@@ -117,18 +117,29 @@ def plot_Tree_explainer_shap(rf_model):
     return
 
 
-def plot_model_prediction_fig_3():
+def plot_model_prediction_fig_3(cpt=False):
     from matplotlib.ticker import (MultipleLocator, AutoMinorLocator)
     from sklearn.linear_model import LinearRegression
     import seaborn as sns
     import matplotlib.pyplot as plt
-    X = produce_X(syear='1994', eyear='2019',add_co2=False)
-    X = add_enso2_and_enso_qbo_to_X(X)
+    if cpt:
+        print('chose CPT')
+        X = produce_X(syear='1994', eyear='2019', add_co2=False, regressors=['radio_cold'], lag=None)
+    else:
+        X = produce_X(syear='1994', eyear='2019', add_co2=False)
+        X = add_enso2_and_enso_qbo_to_X(X)
     y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
     X_test = X.sel(time=slice('1994', '2019'))
     y_test = y.sel(time=slice('1994', '2019'))
     X_train = X.sel(time=slice('2005', '2019'))
     y_train = y.sel(time=slice('2005', '2019'))
+    corr_train = X_train.to_dataset('regressor').to_dataframe()
+    corr_train['h2o'] = y_train.to_dataframe()
+    corr_train = corr_train.corr()['h2o'].round(2).iloc[0]
+    corr_test = X_test.to_dataset('regressor').to_dataframe()
+    corr_test['h2o'] = y_test.to_dataframe()
+    corr_test = corr_test.corr()['h2o'].round(2).iloc[0]
+    print(corr_train, corr_test)
     lr = LinearRegression()
     rds = make_results_for_MLR(lr, X_train, y_train, X_test=X_test, y_test=y_test)
     df = rds['predict'].to_dataframe()
@@ -378,8 +389,8 @@ def produce_rds_etas(eta=1, cpt_source='randel'):
         rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False)
     elif eta == 3:
         if cpt_source == 'randel':
-            pred = ['radio_cold_no_qbo']
-            rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['radio_cold_no_qbo', 6])
+            pred = ['radio_cold']
+            rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['radio_cold', 6])
         elif cpt_source == 'sean':
             pred = ['cpt_ERA5']
             rds = produce_MLR_2D_for_figs_6_and_7(pred, add_enso2=False, reg_shift=['cpt_ERA5', 6])
