@@ -1,5 +1,6 @@
 ## Stratospheric water vapor reconsturction tools using ML methods
 This repository is used mainly to reconstruct and analyze the Stratospheric water vapor using traditional Multiple Linear Regression (MLR) and various more non-linear Machine Learning (ML) models.
+<!---
 For now, we have one project ready to be published:
 ### The roles of the Quasi-Biennial Oscillation and El Niño for entry Stratospheric water vapour
 
@@ -15,7 +16,7 @@ The β coefficients for the water vapor anomalies MLR analysis in the 82.54 hPa 
 Out of sample model predictions of deseasonalized and standardized equitorial water vapor at 82.54 hPa. The various models are RF (blue), SVM (orange), MLP (green) and MLR (red). The observations are from SWOOSH (purple). Note the three forecast "busts":2010-D-2011-JFM, 2015-OND and 2016-OND.
 
 
-
+-->
 ### License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
