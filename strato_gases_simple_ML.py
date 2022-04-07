@@ -14,6 +14,32 @@ OK so far:
     CV 5 kfolds: mean R2: 0.418, mean adj_R2: 0.408,
     std R2: 0.047, std adj_R2: 0.0485
     need to plot residuals with best model.
+
+
+
+For Fig 5 (dist plot of 5 ML models):
+    1) df, model_dict=assemble_cvr_dataframe(strategy=None, add_MLR2=True)
+    2) X = produce_X(syear='1994', eyear='2019')
+       y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
+    3) plot_repeated_kfold_dist(df,model_dict,X,y)
+
+For Fig 6:
+    1) rds = produce_MLR_2D_for_figs_6_and_7()
+    2) fg=plot_beta_coeffs(rds,drop_co2=False,col_wrap=2,pacific_center=True)
+    make sure panel titles are right (qbo, enso, ensoxqbo , enso^2)
+For Fig 8:
+    1) rds = produce_MLR_2D_for_figs_6_and_7(predictors=['qbo_cdas','LN', 'EN', 'neutENSO'], add_enso2=False)
+    2) fg=plot_beta_coeffs(rds,drop_co2=False,col_wrap=2, pacific_center=True)
+For Fig 10:
+    1) plot_model_prediction_fig_3(cpt=True)
+For Fig 3:
+    1) plot_r2_map_predictor_sets_with_co2(save=True,pacific_center=True)
+For Fig 4:
+    1) da=produce_CV_predictions_for_all_HP_optimized_models(add_MLR2=True)
+    2) plot_model_predictions()
+For reproducing Fig 7's shap values use rf with ml_switcher:
+    1) rf.set_params(max_depth=5, min_samples_split=5)
+    2) k2=plot_simplified_shap_tree_explainer(rf)
 @author: shlomi
 """
 from strat_paths import work_chaim
@@ -25,7 +51,7 @@ def split_qbo_en_ln_neut_enso(qbo):
     ln = load_all_regressors()['LN'].dropna('time')
     en = load_all_regressors()['EN'].dropna('time')
     neut = load_all_regressors()['neutENSO'].dropna('time')
-    qbo_en = qbo.where(en>=0.5).fillna(0)
+    qbo_en = qbo.wheadd_MLR2re(en>=0.5).fillna(0)
     qbo_en.name = 'qbo_en'
     qbo_ln = qbo.where(ln<=-0.5).fillna(0)
     qbo_ln.name = 'qbo_ln'
@@ -73,7 +99,7 @@ def ABS_SHAP(df_shap, df):
     ax = k2.plot.barh(x='Predictor', y='SHAP_abs',
                       color=colorlist, figsize=(9, 3), legend=False)
     ax.set_xlabel("SHAP Value (Red = Positive Impact)")
-    return
+    return k2
 
 
 def plot_simplified_shap_tree_explainer(rf_model):
@@ -91,10 +117,10 @@ def plot_simplified_shap_tree_explainer(rf_model):
         {'qbo_cdas': 'QBO', 'anom_nino3p4': 'ENSO'}, axis=1)
     ex_rf = shap.Explainer(rf_model)
     shap_values_rf = ex_rf.shap_values(dfX)
-    ABS_SHAP(shap_values_rf, dfX)
+    k2 = ABS_SHAP(shap_values_rf, dfX)
     ax = plt.gca()
     ax.set_xlabel(r'H$_{2}$O anomalies (STD) (Red is positive)')
-    return
+    return k2
 
 
 def plot_Tree_explainer_shap(rf_model):
@@ -152,8 +178,10 @@ def plot_model_prediction_fig_3(cpt=False):
     df[['Residuals']].plot(ax=ax[1], color='k', legend=False)
     [x.grid(True) for x in ax]
     [x.set_xlabel('') for x in ax]
-    ax[0].set_ylabel(r'H$_{2}$O anomalies [std]')
-    ax[1].set_ylabel(r'H$_{2}$O residuals [std]')
+    ax[0].set_ylabel(r'H$_{2}$O [std.dev]')
+    ax[1].set_ylabel(r'H$_{2}$O [std.dev]')
+    ax[0].set_title('(a) H$_{2}$O anomalies', loc='left')
+    ax[1].set_title('(b) H$_{2}$O residuals', loc='left')
     [x.xaxis.set_minor_locator(AutoMinorLocator()) for x in ax]
     [x.xaxis.grid(True, which='minor') for x in ax]
     # legend = ax.legend(prop={'size': 13}, ncol=5, loc='upper left')
@@ -168,28 +196,43 @@ def plot_model_prediction_fig_3(cpt=False):
     return fig
 
 
-def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5, 57.5], drop_co2=True):
+def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), pacific_center=False,
+                     drop_co2=True):
     import cartopy.crs as ccrs
     import seaborn as sns
     import matplotlib.ticker as mticker
     from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
     from palettable.scientific import diverging as divsci
     from strato_figures import remove_regressors_and_set_title
-    # titles =[r'(a) QBO',
-    #      r'(b) ENSO',
-    #      r'(c) QBO $\times$ ENSO',
-    #      r'(d) ENSO$^2$']
+    import matplotlib.pyplot as plt
+    import numpy as np
     titles =[r'(a) QBO',
-      r'(b) La-nina',
-      r'(c) El-nino',
-      r'(d) neutENSO']
+          r'(b) ENSO',
+          r'(c) QBO $\times$ ENSO',
+          r'(d) ENSO$^2$']
+    # titles =[r'(a) QBO',
+    #   r'(b) La-nina',
+    #   r'(c) El-nino',
+    #   r'(d) neutENSO']
+    if pacific_center:
+        print ('converting to center on the pacific.')
+        cen_lon=180
+        extent=[10, 350, -57.5, 57.5]
+        tick_locator = [0, 60, 120, 180, 240, 300, 360]
+        # convert to 180:
+        rds = rds.roll(lon=rds.lon.size // 2, roll_coords=False)
+        rds = rds.assign_coords(lon=(rds.lon +180))
+    else:
+        cen_lon=0
+        extent=[-170, 170, -57.5, 57.5]
+        tick_locator = [-180, -120, -60, 0, 60, 120, 180]
 
     predict_cmap = divsci.Vik_20.mpl_colormap
     sns.set_theme(style='ticks', font_scale=1.5)
-    proj = ccrs.PlateCarree(central_longitude=0)
+    proj = ccrs.PlateCarree(central_longitude=cen_lon)
     plt_kwargs = dict(add_colorbar=False,
                       col_wrap=col_wrap,
-                      cmap=predict_cmap, center=0.0, extend=None, vmax=None,
+                      cmap=predict_cmap, center=0, extend=None, vmax=None,
                       levels=41, subplot_kws=dict(projection=proj),
                       transform=ccrs.PlateCarree(), figsize=figsize)
 
@@ -202,7 +245,16 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
     cbar_kws = {'label': '', 'format': '%0.2f'}
     cbar_ax = fg.fig.add_axes([0.1, 0.1, .8, .035])  # last num controls width
     fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
+    # fg.fig.canvas.draw()
     for i, ax in enumerate(fg.axes.flatten()):
+        # print(ax.dataLim)
+        reg = rds['params'].isel(regressor=i)
+        cp = reg.plot.contour(ax=ax, colors='yellow', levels=7,
+                              transform=ccrs.PlateCarree())
+        # X, Y = np.meshgrid(reg['lon'].values, reg['lat'].values)
+        # Z = reg.values
+        # cp = ax.contour(X,Y,Z, colors='yellow', levels=3, )
+        ax.clabel(cp, cp.levels, inline=True, fontsize=10)
         ax.coastlines()
         ax.set_extent(extent, crs=ccrs.PlateCarree())
         gl = ax.gridlines(
@@ -212,28 +264,29 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
             alpha=0.5,
             linestyle='--',
             draw_labels=True)
-        gl.xlabels_top = False
+        gl.top_labels = False
         gl.xlabel_style = {'size': 9}
         gl.ylabel_style = {'size': 9}
         gl.xlines = True
-        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
-        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        # gl.xlocator = mticker.FixedLocator(tick_locator)
+        # gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
         gl.xformatter = LONGITUDE_FORMATTER
         gl.yformatter = LATITUDE_FORMATTER
         gl_list.append(gl)
         # ax = remove_regressors_and_set_title(ax)
         ax.set_title(titles[i])
-    gl_list[0].ylabels_right = False
-    gl_list[1].ylabels_right = False
-    gl_list[1].ylabels_left = True
-    gl_list[2].ylabels_right = False
-    gl_list[3].ylabels_left = True
-    gl_list[3].ylabels_right = True
+    gl_list[0].right_labels = False
+    gl_list[1].right_labels = False
+    gl_list[1].left_labels = True
+    gl_list[2].right_labels = False
+    gl_list[3].left_labels = True
+    gl_list[3].right_labels = True
     try:
-        gl_list[3].ylabels_right = False
+        gl_list[3].right_labels = False
     except IndexError:
         pass
-    fg.fig.tight_layout()
+    # return fg
+    # fg.fig.tight_layout()
     fg.fig.subplots_adjust(top=0.93,
                            bottom=0.2,
                            left=0.05,
@@ -259,6 +312,7 @@ def plot_beta_coeffs(rds, col_wrap=3, figsize=(13, 6), extent=[-170, 170, -57.5,
 
 
 def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
+                                        pacific_center=False,
                                         save=True):
     """r2 map (lat-lon) for cdas-plags, enso, ch4"""
     import xarray as xr
@@ -306,7 +360,15 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
 #    ax = fig.add_subplot(1, 1, 1,
 #                         projection=ccrs.PlateCarree(central_longitude=0))
 #    ax.coastlines()
-    proj = ccrs.PlateCarree(central_longitude=0)
+    if pacific_center:
+        cen_lon = 180
+        extent =[10, 350, -57.5, 57.5]
+        rds = rds.roll(lon=rds.lon.size // 2, roll_coords=False)
+        rds = rds.assign_coords(lon=(rds.lon +180))
+    else:
+        cen_lon = 0
+        extent =[-170, 170, -57.5, 57.5]
+    proj = ccrs.PlateCarree(central_longitude=cen_lon)
     fg = rds.plot.contourf(col='eta', add_colorbar=False, cmap=error_cmap,
                            vmin=0.0, extend=None, levels=41, col_wrap=2,
                            subplot_kws=dict(projection=proj),
@@ -328,6 +390,11 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
     fg.add_colorbar(cax=cbar_ax, orientation="horizontal", **cbar_kws)
     gl_list = []
     for i, ax in enumerate(fg.axes.flatten()):
+        ax.set_extent(extent, crs=ccrs.PlateCarree())
+        reg = rds.isel(eta=i)
+        cp = reg.plot.contour(ax=ax, colors='red', levels=5,
+                              transform=ccrs.PlateCarree())
+        ax.clabel(cp, cp.levels, inline=True, fontsize=10)
         ax.coastlines()
         gl = ax.gridlines(
             crs=ccrs.PlateCarree(),
@@ -336,12 +403,12 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
             alpha=0.5,
             linestyle='--',
             draw_labels=True)
-        gl.xlabels_top = False
+        gl.top_labels = False
         gl.xlabel_style = {'size': 9}
         gl.ylabel_style = {'size': 9}
         gl.xlines = True
-        gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
-        gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
+        # gl.xlocator = mticker.FixedLocator([-180, -120, -60, 0, 60, 120, 180])
+        # gl.ylocator = mticker.FixedLocator([-45, -30, -15, 0, 15, 30, 45])
         gl.xformatter = LONGITUDE_FORMATTER
         gl.yformatter = LATITUDE_FORMATTER
         gl_list.append(gl)
@@ -357,7 +424,7 @@ def plot_r2_map_predictor_sets_with_co2(path=work_chaim, cpt_source='randel',
 #        gl_list[3].ylabels_right = False
 #    except IndexError:
 #        pass
-    fg.fig.tight_layout()
+    # fg.fig.tight_layout()
     fg.fig.subplots_adjust(top=0.92,
                            bottom=0.16,
                            left=0.065,
@@ -506,16 +573,17 @@ def plot_model_predictions(da):
     sns.set_theme(style='ticks', font_scale=1.5)
     df = convert_da_to_long_form_df(da)
     fig, ax = plt.subplots(figsize=(18, 5))
+    pal = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:pink', 'tab:purple']
     ax = sns.lineplot(data=df, x='time', y='value', hue='model/obs.',
-                      legend=True)
-    lw = ax.lines[4].get_linewidth()  # lw of first line
-    plt.setp(ax.lines[4], linewidth=2.5)
+                      legend=True, palette=pal)
+    lw = ax.lines[5].get_linewidth()  # lw of first line
+    plt.setp(ax.lines[5], linewidth=2.5)
     ax.grid(True)
     ax.set_xlabel('')
-    ax.set_ylabel(r'H$_{2}$O anomalies [std]')
+    ax.set_ylabel(r'H$_{2}$O anomalies [std.dev]')
     ax.xaxis.set_minor_locator(AutoMinorLocator())
     ax.xaxis.grid(True, which='minor')
-    legend = ax.legend(prop={'size': 13}, ncol=5, loc='upper left')
+    legend = ax.legend(prop={'size': 13}, ncol=6, loc='upper left')
     plot_forecast_busts_lines_datetime(ax, color='k')
     fig.tight_layout()
     # get handles and labels of legend:
@@ -539,7 +607,7 @@ def add_enso2_and_enso_qbo_to_X(X):
 
 
 def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
-                                                       cv='kfold'):
+                                                       cv='kfold', add_MLR2=False):
     import xarray as xr
     X = produce_X(syear='1994', eyear='2019', add_co2=False)
     y = produce_y(detrend='lr', lat_band_mean=[-15, 15], syear='1994', eyear='2019')
@@ -552,6 +620,13 @@ def produce_CV_predictions_for_all_HP_optimized_models(path=ml_path,
             model.set_params(**get_HP_params_from_optimized_model(path=path, model=model_name))
         da = cross_val_predict_da(model, X, y, cv=cv)
         da.name = model_name + ' model'
+        das.append(da)
+    if add_MLR2:
+        X = add_enso2_and_enso_qbo_to_X(X)
+        print('adding ENSO^2 and ENSO*QBO')
+        model = ml.pick_model('MLR')
+        da = cross_val_predict_da(model, X, y, cv=cv)
+        da.name = 'MLR2 model'
         das.append(da)
     ds = xr.merge(das)
     ds['SWOOSH'] = y
@@ -656,7 +731,7 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
     df_melted = df.T.melt(var_name='model', value_name=r'R$^2$')
     pal = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:pink']
     fg = sns.displot(data=df_melted, x=r'R$^2$', col="model",
-                     kind="hist", col_wrap=2, hue='model', stat='density',
+                     kind="hist", col_wrap=2, hue='model', stat='probability',
                      kde=True, palette=pal)
     letter = ['a', 'b', 'c', 'd', 'e']
     for i, ax in enumerate(fg.axes):
@@ -671,7 +746,7 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
         textstr = '\n'.join((
             r'$\mathrm{mean}=%.2f$' % (mean, ),
             r'$\mathrm{median}=%.2f$' % (median, ),
-            r'$\mathrm{std}=%.2f$' % (std, ),
+            r'$\mathrm{std.dev}=%.2f$' % (std, ),
             r'in sample result$=%.2f$' % (in_sample, )))
         props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
         ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=14,
@@ -683,7 +758,7 @@ def plot_repeated_kfold_dist(df, model_dict, X, y):
 
 
 def assemble_cvr_dataframe(path=ml_path, score='test_r2', n_splits=5,
-                           strategy='LOGO-year', add_MLR2=False):
+                           strategy=None, add_MLR2=True):
     import pandas as pd
     rf, rf_model = cross_validate_using_optimized_HP(
         path, model='RF', n_splits=n_splits, strategy=strategy)
