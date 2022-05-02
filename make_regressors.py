@@ -816,7 +816,8 @@ def _download_enso_ersst(loadpath, filename='noaa_ersst_nino.nc', index=False,
     else:
         print('Downloading ersst nino data from noaa ncep website...')
         url = 'http://www.cpc.ncep.noaa.gov/data/indices/ersst5.nino.mth.81-10.ascii'
-        s = requests.get(url).content
+        url2 = 'https://www.cpc.ncep.noaa.gov/data/indices/ersst5.nino.mth.91-20.ascii'
+        s = requests.get(url2).content
         nino_df = pd.read_csv(io.StringIO(s.decode('utf-8')),
                               delim_whitespace=True)
         idx = pd.to_datetime(dict(year=nino_df.YR, month=nino_df.MON, day='1'))
