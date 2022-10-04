@@ -1081,6 +1081,24 @@ def _produce_nao(loadpath=reg_path, savepath=reg_path):
         print_saved_file(filename, savepath)
     return da
 
+def _download_NAO(savepath=reg_path):
+    import pandas as pd
+    import requests
+    import io
+    url = 'https://www.cpc.ncep.noaa.gov/products/precip/CWlink/pna/norm.nao.monthly.b5001.current.ascii'
+    r = requests.get(url).content
+    df = pd.read_csv(io.StringIO(r.decode('utf-8')),
+                     delim_whitespace=True, comment='#')
+    df.columns = ['year', 'month', 'nao_index']
+    df['dt'] = pd.to_datetime(df['year'].astype(str) + '-' + df['month'].astype(str))
+    df = df.set_index('dt')
+    df.index.name = 'time'
+    df = df.drop(['year','month'], axis=1)
+    if savepath is not None:
+        df.to_csv(savepath/'nao.txt')
+    return df
+
+
 
 def _produce_ea_wr(loadpath=reg_path, savepath=reg_path):
     import pandas as pd
